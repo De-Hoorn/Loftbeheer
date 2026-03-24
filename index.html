@@ -607,7 +607,10 @@ select option { background:var(--dh-sur); color:var(--dh-cream); }
 /* ═══ BOOKING FORM ═══ */
 .booking-form-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
 </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library/3.14.0/msal-browser.min.js"></script>
+  <script>
+// Laad MSAL met fallback
+</script>
+<script src="https://unpkg.com/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
 </head>
 <body>
 <!-- Mobile hamburger knop -->
@@ -750,7 +753,7 @@ select option { background:var(--dh-sur); color:var(--dh-cream); }
       <div><div class="sb-uname" id="sbUname"></div><div class="sb-urole" id="sbUrole"></div></div>
       <button class="sb-out" onclick="logout()" title="Afmelden">↩</button>
     </div>
-    <div style="text-align:center;padding:6px 0 2px;font-size:9px;color:var(--dh-muted);letter-spacing:.5px">v6 · De Hoorn Loftbeheer · SP · SP</div>
+    <div style="text-align:center;padding:6px 0 2px;font-size:9px;color:var(--dh-muted);letter-spacing:.5px">v6 · De Hoorn Loftbeheer · <span id='sp-status' style='color:var(--dh-muted)'>SP</span> · SP</div>
   </div>
 </nav>
 
@@ -2353,17 +2356,38 @@ function getProfielById(pid){
 function loginProfile(pid){ doLogin(pid); } // legacy compat
 
 async function initStep1(){
-  await spInit();
-  const accs=_msalApp.getAllAccounts();
-  if(!accs.length){_spLoginBanner();return;}
-  const token=await spGetToken();
-  if(!token)return;
-  if(_spReady){
-    await spLoad();
-    try{localStorage.setItem('dh7_LEEG_db',JSON.stringify(db));}catch(e){}
-    try{localStorage.setItem('dh4_LEEG_bookings',JSON.stringify(bookings));}catch(e){}
-    load();loadBookings();
+  // SP auth — niet-blokkerend: als het mislukt gaat de app gewoon door
+  try {
+    await spInit();
+    // Verwerk terugkeer na redirect (token zit al in sessie)
+    const accs = _msalApp.getAllAccounts();
+    if(accs.length){
+      // Al ingelogd — haal token stil op en laad SP data
+      try {
+        const token = await _msalApp.acquireTokenSilent({
+          scopes: SP_SCOPES, account: accs[0]
+        });
+        _spAccount = accs[0];
+        _spToken = token.accessToken;
+        _spReady = true;
+        const spStatusEl = document.getElementById('sp-status');
+        if(spStatusEl) spStatusEl.innerHTML = '🟢 SP';
+        await spLoad();
+        try{localStorage.setItem('dh7_LEEG_db',JSON.stringify(db));}catch(e){}
+        try{localStorage.setItem('dh4_LEEG_bookings',JSON.stringify(bookings));}catch(e){}
+        load(); loadBookings();
+        console.log('✅ SP ingelogd als', accs[0].username);
+      } catch(e){
+        console.warn('SP stille auth mislukt, verder zonder SP:', e.message);
+      }
+    } else {
+      // Niet ingelogd — toon kleine login-banner in de app zelf (geen redirect)
+      console.log('SP: niet ingelogd');
+    }
+  } catch(e){
+    console.warn('SP init mislukt, verder met localStorage:', e.message);
   }
+  // App altijd starten — SP login is optioneel
   const PETJES = [
     { groep:'eigenaar',   ico:'🏛', label:'Eigenaar',   kleur:'#c8922a' },
     { groep:'inspecteur', ico:'🔍', label:'Inspecteur', kleur:'#2a8a4a' },
