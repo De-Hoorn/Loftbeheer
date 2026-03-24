@@ -2356,38 +2356,22 @@ function getProfielById(pid){
 function loginProfile(pid){ doLogin(pid); } // legacy compat
 
 async function initStep1(){
-  // SP auth — niet-blokkerend: als het mislukt gaat de app gewoon door
+  // SP auth — niet-blokkerend
   try {
     await spInit();
-    // Verwerk terugkeer na redirect (token zit al in sessie)
-    const accs = _msalApp.getAllAccounts();
-    if(accs.length){
-      // Al ingelogd — haal token stil op en laad SP data
-      try {
-        const token = await _msalApp.acquireTokenSilent({
-          scopes: SP_SCOPES, account: accs[0]
-        });
-        _spAccount = accs[0];
-        _spToken = token.accessToken;
-        _spReady = true;
-        const spStatusEl = document.getElementById('sp-status');
-        if(spStatusEl) spStatusEl.innerHTML = '🟢 SP';
-        await spLoad();
-        try{localStorage.setItem('dh7_LEEG_db',JSON.stringify(db));}catch(e){}
-        try{localStorage.setItem('dh4_LEEG_bookings',JSON.stringify(bookings));}catch(e){}
-        load(); loadBookings();
-        console.log('✅ SP ingelogd als', accs[0].username);
-      } catch(e){
-        console.warn('SP stille auth mislukt, verder zonder SP:', e.message);
-      }
+    if(_spReady){
+      await spLoad();
+      try{localStorage.setItem('dh7_LEEG_db',JSON.stringify(db));}catch(e){}
+      try{localStorage.setItem('dh4_LEEG_bookings',JSON.stringify(bookings));}catch(e){}
+      load(); loadBookings();
+      const el=document.getElementById('sp-status');
+      if(el) el.innerHTML='🟢 SP';
     } else {
-      // Niet ingelogd — toon kleine login-banner in de app zelf (geen redirect)
-      console.log('SP: niet ingelogd');
+      _spLoginBanner(); return;
     }
   } catch(e){
-    console.warn('SP init mislukt, verder met localStorage:', e.message);
+    console.warn('SP fout, localStorage:', e.message);
   }
-  // App altijd starten — SP login is optioneel
   const PETJES = [
     { groep:'eigenaar',   ico:'🏛', label:'Eigenaar',   kleur:'#c8922a' },
     { groep:'inspecteur', ico:'🔍', label:'Inspecteur', kleur:'#2a8a4a' },
