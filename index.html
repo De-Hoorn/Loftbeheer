@@ -8584,21 +8584,17 @@ function _sdParse(buf){
   const {parsed,geannuleerd,skip}=_sdParseRows(rows);
   window._sdParsed=parsed;
   window._sdGeannuleerd=geannuleerd;
-  const nieuw=parsed.filter(p=>!bookings.find(b=>b.sdId===p.sdId&&b.loftId===p.loftId)).length;
-  const gewijzigd=parsed.filter(p=>{const b=bookings.find(x=>x.sdId===p.sdId&&x.loftId===p.loftId);return b&&(b.checkIn!==p.checkIn||b.checkOut!==p.checkOut||(b.name||b.gast)!==(p.name||p.gast));}).length;
+  // Volledige sync preview: huidige SD-boekingen vs nieuwe set
+  const huidigeSD = bookings.filter(b=>b.sdId).length;
+  const nettVerwijderd = Math.max(0, huidigeSD - parsed.length);
   document.getElementById('sd-preview').innerHTML=`
     <div style="background:var(--dh-sur);border:1px solid var(--dh-bdr);border-radius:8px;padding:12px;font-size:12px">
-      <div style="font-weight:700;color:var(--dh-cream);margin-bottom:8px">Overzicht</div>
+      <div style="font-weight:700;color:var(--dh-cream);margin-bottom:8px">Overzicht — volledige sync</div>
       <div style="display:flex;flex-direction:column;gap:5px">
-        <div style="display:flex;justify-content:space-between"><span style="color:var(--dh-muted)">Totaal:</span><span style="font-weight:700">${parsed.length}</span></div>
-        <div style="display:flex;justify-content:space-between"><span style="color:var(--dh-grn)">✅ Nieuw:</span><span style="color:var(--dh-grn);font-weight:700">${nieuw}</span></div>
-        <div style="display:flex;justify-content:space-between"><span style="color:var(--dh-gold)">🔄 Bijwerken:</span><span style="color:var(--dh-gold);font-weight:700">${gewijzigd}</span></div>
-        ${(()=>{
-          const sdIds=new Set(parsed.map(p=>p.sdId+'_'+p.loftId));
-          const ontbreekt=bookings.filter(b=>b.sdId&&!sdIds.has(b.sdId+'_'+b.loftId)).length;
-          const totVerw=geannuleerd.length+ontbreekt;
-          return totVerw>0?`<div style="display:flex;justify-content:space-between"><span style="color:var(--dh-red)">🗑 Te verwijderen:</span><span style="color:var(--dh-red);font-weight:700">${totVerw}</span></div>`:'';
-        })()}
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--dh-muted)">In bestand:</span><span style="font-weight:700">${parsed.length} boekingen</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--dh-muted)">Huidig in app:</span><span style="font-weight:700">${huidigeSD} SD-boekingen</span></div>
+        ${geannuleerd.length?`<div style="display:flex;justify-content:space-between"><span style="color:var(--dh-red)">🗑 Geannuleerd:</span><span style="color:var(--dh-red);font-weight:700">${geannuleerd.length}</span></div>`:''}
+        <div style="display:flex;justify-content:space-between;border-top:1px solid var(--dh-bdr);padding-top:5px;margin-top:3px"><span style="color:var(--dh-gold);font-weight:700">Na import:</span><span style="color:var(--dh-gold);font-weight:700">${parsed.length} boekingen</span></div>
         <div style="display:flex;justify-content:space-between"><span style="color:var(--dh-muted)">⏭ Overgeslagen:</span><span style="color:var(--dh-muted);font-weight:700">${skip}</span></div>
       </div>
       <div style="margin-top:8px;display:flex;flex-direction:column;gap:3px">
@@ -8622,24 +8618,45 @@ function _sdImportBevestigen(){
       verwijderd++;
     }
   });
-  // Verwijder ook boekingen die niet meer in het exportbestand staan (verdwenen uit Stardekk)
-  const sdIdsInBestand = new Set(window._sdParsed.map(p=>p.sdId+'_'+p.loftId));
-  const teVerwijderen = bookings.filter(b=>b.sdId && !sdIdsInBestand.has(b.sdId+'_'+b.loftId));
-  teVerwijderen.forEach(b=>{
-    bookings = bookings.filter(x=>x.id!==b.id);
-    db.taken = db.taken.filter(t=>t.bkId!==b.id);
+  // Volledige sync: verwijder ALLE bestaande Stardekk-boekingen
+  // en vervang ze door de nieuwe set uit het exportbestand
+  // (bewaart manuele boekingen zonder sdId)
+  const oudeSD = bookings.filter(b => b.sdId);
+  oudeSD.forEach(b => {
+    // Bewaar manueel ingestelde tijden voor hergebruik
+    b._bewaardInTijd  = b.inTijd_manueel  ? b.inTijd  : null;
+    b._bewaardOutTijd = b.outTijd_manueel ? b.outTijd : null;
+  });
+  const bewaardeTijdenMap = {};
+  oudeSD.forEach(b => {
+    bewaardeTijdenMap[b.sdId+'_'+b.loftId] = {
+      inTijd:  b._bewaardInTijd,
+      outTijd: b._bewaardOutTijd,
+      inTijd_manueel:  b.inTijd_manueel,
+      outTijd_manueel: b.outTijd_manueel,
+    };
+  });
+
+  // Verwijder alle oude SD-boekingen en hun taken
+  const oudeSDIds = new Set(oudeSD.map(b => b.id));
+  oudeSD.forEach(b => {
+    db.taken = db.taken.filter(t => t.bkId !== b.id);
     verwijderd++;
   });
-  window._sdParsed.forEach(p=>{
-    const idx=bookings.findIndex(b=>b.sdId===p.sdId&&b.loftId===p.loftId);
-    if(idx===-1){bookings.push({...p,id:'sd_'+uid()});nieuw++;}
-    else{// Bewaar manueel ingestelde tijden bij update
-        const bewaardeTijden = {
-          inTijd:  bookings[idx].inTijd_manueel  ? bookings[idx].inTijd  : p.inTijd,
-          outTijd: bookings[idx].outTijd_manueel ? bookings[idx].outTijd : p.outTijd,
-        };
-        bookings[idx]={...bookings[idx],...p,...bewaardeTijden};gewijzigd++;}
+  bookings = bookings.filter(b => !b.sdId);
+
+  // Voeg nieuwe set toe
+  window._sdParsed.forEach(p => {
+    const bewaard = bewaardeTijdenMap[p.sdId+'_'+p.loftId] || {};
+    const inTijd  = bewaard.inTijd_manueel  ? bewaard.inTijd  : p.inTijd;
+    const outTijd = bewaard.outTijd_manueel ? bewaard.outTijd : p.outTijd;
+    bookings.push({...p, id:'sd_'+uid(), inTijd, outTijd,
+      inTijd_manueel:  bewaard.inTijd_manueel  || false,
+      outTijd_manueel: bewaard.outTijd_manueel || false,
+    });
+    nieuw++;
   });
+  verwijderd = Math.max(0, verwijderd - nieuw); // netto verwijderd
   save();closeM('mT');
   toast(`✅ ${nieuw} nieuw · ${gewijzigd} bijgewerkt${verwijderd?' · '+verwijderd+' verwijderd':''}`,'ok');
   renderDash();
@@ -8675,14 +8692,20 @@ async function spSyncStardekk(silent){
       const idx=bookings.findIndex(b=>b.sdId===p.sdId&&b.loftId===p.loftId);
       if(idx!==-1){const bkId=bookings[idx].id;bookings.splice(idx,1);db.taken=db.taken.filter(t=>t.bkId!==bkId);verwijderd++;}
     });
-    // Verwijder ook boekingen die niet meer in het exportbestand staan
-    const sdIdsInBestand2=new Set(parsed.map(p=>p.sdId+'_'+p.loftId));
-    const teVerwijderen2=bookings.filter(b=>b.sdId&&!sdIdsInBestand2.has(b.sdId+'_'+b.loftId));
-    teVerwijderen2.forEach(b=>{
-      bookings=bookings.filter(x=>x.id!==b.id);
+    // Volledige sync: vervang alle SD-boekingen
+    const bewaardMap2={};
+    bookings.filter(b=>b.sdId).forEach(b=>{
+      bewaardMap2[b.sdId+'_'+b.loftId]={inTijd:b.inTijd_manueel?b.inTijd:null,outTijd:b.outTijd_manueel?b.outTijd:null,inTijd_manueel:b.inTijd_manueel,outTijd_manueel:b.outTijd_manueel};
       db.taken=db.taken.filter(t=>t.bkId!==b.id);
       verwijderd++;
     });
+    bookings=bookings.filter(b=>!b.sdId);
+    parsed.forEach(p=>{
+      const bw=bewaardMap2[p.sdId+'_'+p.loftId]||{};
+      bookings.push({...p,id:'sd_'+uid(),inTijd:bw.inTijd_manueel?bw.inTijd:p.inTijd,outTijd:bw.outTijd_manueel?bw.outTijd:p.outTijd,inTijd_manueel:bw.inTijd_manueel||false,outTijd_manueel:bw.outTijd_manueel||false});
+      nieuw++;
+    });
+    verwijderd=Math.max(0,verwijderd-nieuw);
     parsed.forEach(p=>{
       const idx=bookings.findIndex(b=>b.sdId===p.sdId&&b.loftId===p.loftId);
       if(idx===-1){bookings.push({...p,id:'sd_'+uid()});nieuw++;}
