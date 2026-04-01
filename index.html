@@ -8474,6 +8474,151 @@ function getVolgendeUitvoering(taak){
   return vroegste;
 }
 
+
+// ══ Stardekk XLSX Import (manueel) ══
+function openStardekkImport(){
+  document.getElementById('mTtitle').textContent='📥 Stardekk boekingen importeren';
+  document.querySelector('#mT .mb').innerHTML=`
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="font-size:12px;color:var(--dh-muted);line-height:1.6">
+        Exporteer reservaties uit Stardekk als Excel en upload het hier.
+        Nieuwe boekingen worden toegevoegd, bestaande bijgewerkt.
+      </div>
+      <label style="display:flex;flex-direction:column;align-items:center;gap:8px;
+        background:var(--dh-sur2);border:2px dashed var(--dh-bdr);border-radius:10px;
+        padding:24px 16px;cursor:pointer" id="sd-zone"
+        ondragover="event.preventDefault();document.getElementById('sd-zone').style.borderColor='var(--dh-gold)'"
+        ondragleave="document.getElementById('sd-zone').style.borderColor='var(--dh-bdr)'"
+        ondrop="event.preventDefault();document.getElementById('sd-zone').style.borderColor='var(--dh-bdr)';_sdHandleFile(event.dataTransfer.files[0])">
+        <span style="font-size:36px">📂</span>
+        <span style="font-size:13px;font-weight:700;color:var(--dh-cream)">Sleep Excel-bestand hier</span>
+        <span style="font-size:11px;color:var(--dh-muted)">of klik om te bladeren (.xlsx)</span>
+        <input type="file" accept=".xlsx,.xls" style="display:none" onchange="_sdHandleFile(this.files[0])">
+      </label>
+      <div id="sd-preview"></div>
+    </div>`;
+  document.querySelector('#mT .mf').innerHTML=
+    `<button class="btn btn-ghost" onclick="closeM('mT')">Annuleer</button>
+     <button class="btn btn-gold" id="sd-ok" onclick="_sdImportBevestigen()" style="display:none">✅ Importeren</button>`;
+  openM('mT');
+  window._sdParsed=null;
+}
+
+function _sdHandleFile(file){
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      if(typeof XLSX==='undefined'){
+        const s=document.createElement('script');
+        s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+        s.onload=()=>_sdParse(e.target.result);
+        document.head.appendChild(s);
+      } else { _sdParse(e.target.result); }
+    }catch(err){
+      document.getElementById('sd-preview').innerHTML=
+        `<div style="color:var(--dh-red);font-size:12px">❌ ${err.message}</div>`;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function _sdParseRows(rows){
+  const loftRe=/\(Loft\s+([\d.]+)\)/g;
+  const parsed=[];let skip=0;
+  rows.forEach(r=>{
+    const status=(r['Status']||'').toLowerCase();
+    if(status==='geannuleerd'||!r['Aankomst']||!r['Accommodaties']){skip++;return;}
+    const lofts=[];let m;loftRe.lastIndex=0;
+    while((m=loftRe.exec(r['Accommodaties']))!==null)lofts.push(m[1]);
+    if(!lofts.length){skip++;return;}
+    const fd=v=>typeof v==='string'?v.slice(0,10):v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10);
+    const ci=fd(r['Aankomst']),co=fd(r['Vertrek']);
+    lofts.forEach(loftId=>{
+      parsed.push({sdId:r['ID'],loftId,gast:r['Contact informatie']||'',email:r['E-mailadres']||'',tel:r['Telefoon']||'',checkIn:ci,checkOut:co,aantalGasten:parseInt(r['Aantal gasten'])||1,status:['nieuw','in behandeling'].includes(status)?'bevestigd':status,bron:r['Via']||''});
+    });
+  });
+  return {parsed,skip};
+}
+
+function _sdParse(buf){
+  const wb=XLSX.read(buf,{type:'array',cellDates:true});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{raw:false,dateNF:'yyyy-mm-dd'});
+  const {parsed,skip}=_sdParseRows(rows);
+  window._sdParsed=parsed;
+  const nieuw=parsed.filter(p=>!bookings.find(b=>b.sdId===p.sdId&&b.loftId===p.loftId)).length;
+  const gewijzigd=parsed.filter(p=>{const b=bookings.find(x=>x.sdId===p.sdId&&x.loftId===p.loftId);return b&&(b.checkIn!==p.checkIn||b.checkOut!==p.checkOut||b.gast!==p.gast);}).length;
+  document.getElementById('sd-preview').innerHTML=`
+    <div style="background:var(--dh-sur);border:1px solid var(--dh-bdr);border-radius:8px;padding:12px;font-size:12px">
+      <div style="font-weight:700;color:var(--dh-cream);margin-bottom:8px">Overzicht</div>
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--dh-muted)">Totaal:</span><span style="font-weight:700">${parsed.length}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--dh-grn)">✅ Nieuw:</span><span style="color:var(--dh-grn);font-weight:700">${nieuw}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--dh-gold)">🔄 Bijwerken:</span><span style="color:var(--dh-gold);font-weight:700">${gewijzigd}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--dh-muted)">⏭ Overgeslagen:</span><span style="color:var(--dh-muted);font-weight:700">${skip}</span></div>
+      </div>
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:3px">
+        ${parsed.slice(0,4).map(p=>`<div style="font-size:11px;background:var(--dh-sur2);border-radius:5px;padding:4px 8px"><strong>Loft ${p.loftId}</strong> · ${p.gast} · ${p.checkIn} → ${p.checkOut}</div>`).join('')}
+        ${parsed.length>4?`<div style="font-size:10px;color:var(--dh-muted)">... en ${parsed.length-4} meer</div>`:''}
+      </div>
+    </div>`;
+  document.getElementById('sd-ok').style.display='';
+}
+
+function _sdImportBevestigen(){
+  if(!window._sdParsed||!window._sdParsed.length){toast('Geen data','err');return;}
+  let nieuw=0,gewijzigd=0;
+  window._sdParsed.forEach(p=>{
+    const idx=bookings.findIndex(b=>b.sdId===p.sdId&&b.loftId===p.loftId);
+    if(idx===-1){bookings.push({...p,id:'sd_'+uid()});nieuw++;}
+    else{bookings[idx]={...bookings[idx],...p};gewijzigd++;}
+  });
+  save();closeM('mT');
+  toast(`✅ ${nieuw} nieuw · ${gewijzigd} bijgewerkt`,'ok');
+  renderDash();
+}
+
+// ══ Stardekk auto-sync van SP ══
+async function spSyncStardekk(silent){
+  if(typeof _spReady==='undefined'||!_spReady){
+    if(!silent)toast('Niet verbonden met SharePoint. Gebruik de manuele upload.','err');
+    return false;
+  }
+  if(!silent)toast('🔄 Stardekk laden van SP...','info');
+  try {
+    const buf=await spReadBinary(SP_CONFIG.sdFile);
+    if(!buf){
+      if(!silent)toast('Geen stardekk_export.xlsx gevonden in de LoftBeheer map op SP','err');
+      return false;
+    }
+    if(typeof XLSX==='undefined'){
+      await new Promise((res,rej)=>{
+        const s=document.createElement('script');
+        s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+        s.onload=res;s.onerror=rej;document.head.appendChild(s);
+      });
+    }
+    const wb=XLSX.read(buf,{type:'array',cellDates:true});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(ws,{raw:false,dateNF:'yyyy-mm-dd'});
+    const {parsed,skip}=_sdParseRows(rows);
+    let nieuw=0,gewijzigd=0;
+    parsed.forEach(p=>{
+      const idx=bookings.findIndex(b=>b.sdId===p.sdId&&b.loftId===p.loftId);
+      if(idx===-1){bookings.push({...p,id:'sd_'+uid()});nieuw++;}
+      else if(bookings[idx].checkIn!==p.checkIn||bookings[idx].checkOut!==p.checkOut||bookings[idx].gast!==p.gast){bookings[idx]={...bookings[idx],...p};gewijzigd++;}
+    });
+    if(nieuw||gewijzigd){save();renderDash();}
+    if(!silent)toast('✅ Stardekk: '+nieuw+' nieuw · '+gewijzigd+' bijgewerkt · '+skip+' overgeslagen','ok');
+    try{localStorage.setItem('sd_last_sync',new Date().toISOString());}catch(e){}
+    return true;
+  } catch(e){
+    if(!silent)toast('Sync mislukt: '+e.message,'err');
+    return false;
+  }
+}
+
 </script>
 
 <!-- PRINT PLANNING MODAL -->
