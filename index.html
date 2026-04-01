@@ -126,7 +126,7 @@ body { background:var(--dh-bg); color:var(--dh-cream); font-family:var(--sans); 
 
 /* ═══ APP ═══ */
 #app { display:none; min-height:100vh; }
-.layout { display:flex; min-height:100vh; } #app { padding-top:28px; } #loginScreen { padding-top:28px; } #gastScreen { padding-top:28px; } #externScreen { padding-top:28px; }
+.layout { display:flex; min-height:100vh; } #app { padding-top:34px; } #loginScreen { padding-top:34px; } #gastScreen { padding-top:34px; } #externScreen { padding-top:34px; }
 
 /* SIDEBAR */
 .sb {
@@ -994,6 +994,15 @@ let _msalApp=null,_spAccount=null,_spToken=null,_spReady=false,_saveTimeout=null
 async function spInit(){if(_msalApp)return;_msalApp=new msal.PublicClientApplication({auth:{clientId:SP_CONFIG.clientId,authority:'https://login.microsoftonline.com/'+SP_CONFIG.tenantId,redirectUri:window.location.href.split('?')[0].split('#')[0]},cache:{cacheLocation:'sessionStorage',storeAuthStateInCookie:true}});await _msalApp.initialize();try{const r=await _msalApp.handleRedirectPromise();if(r&&r.account){_spAccount=r.account;_spToken=r.accessToken;_spReady=true;}}catch(e){}}
 async function spGetToken(){await spInit();const a=_msalApp.getAllAccounts();if(a.length)_spAccount=a[0];try{const r=await _msalApp.acquireTokenSilent({scopes:SP_SCOPES,account:_spAccount});_spAccount=r.account;_spToken=r.accessToken;_spReady=true;return r.accessToken;}catch(e){await _msalApp.acquireTokenRedirect({scopes:SP_SCOPES});return null;}}
 async function spReadFile(n){const t=await spGetToken();if(!t)return null;try{const r=await fetch('https://graph.microsoft.com/v1.0/drives/'+SP_CONFIG.driveId+'/items/'+SP_CONFIG.folderId+':/'+n+':/content',{headers:{Authorization:'Bearer '+t}});if(!r.ok)return null;return await r.json();}catch(e){return null;}}
+async function spReadBinary(n){
+  if(!_spToken)return null;
+  try{
+    const r=await fetch('https://graph.microsoft.com/v1.0/drives/'+SP_CONFIG.driveId+'/items/'+SP_CONFIG.folderId+':/'+n+':/content',
+      {headers:{Authorization:'Bearer '+_spToken}});
+    if(!r.ok)return null;
+    return await r.arrayBuffer();
+  }catch(e){return null;}
+}
 async function spWriteFile(n,d){const t=await spGetToken();if(!t)return false;try{const r=await fetch('https://graph.microsoft.com/v1.0/drives/'+SP_CONFIG.driveId+'/items/'+SP_CONFIG.folderId+':/'+n+':/content',{method:'PUT',headers:{Authorization:'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify(d)});return r.ok;}catch(e){return false;}}
 async function spLoad(){const[a,b]=await Promise.all([spReadFile(SP_CONFIG.dbFile),spReadFile(SP_CONFIG.bkFile)]);if(a){db=a;console.log('SP db ok');}if(b){bookings=Array.isArray(b)?b:[];console.log('SP bookings ok');}}
 function spSave(){if(_saveTimeout)clearTimeout(_saveTimeout);_saveTimeout=setTimeout(async()=>{if(!_spReady)return;await Promise.all([spWriteFile(SP_CONFIG.dbFile,db),spWriteFile(SP_CONFIG.bkFile,bookings)]);console.log('SP saved');},1000);}
