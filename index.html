@@ -8593,7 +8593,12 @@ function _sdParse(buf){
         <div style="display:flex;justify-content:space-between"><span style="color:var(--dh-muted)">Totaal:</span><span style="font-weight:700">${parsed.length}</span></div>
         <div style="display:flex;justify-content:space-between"><span style="color:var(--dh-grn)">✅ Nieuw:</span><span style="color:var(--dh-grn);font-weight:700">${nieuw}</span></div>
         <div style="display:flex;justify-content:space-between"><span style="color:var(--dh-gold)">🔄 Bijwerken:</span><span style="color:var(--dh-gold);font-weight:700">${gewijzigd}</span></div>
-        <div style="display:flex;justify-content:space-between"><span style="color:var(--dh-red)">🗑 Geannuleerd (verwijderen):</span><span style="color:var(--dh-red);font-weight:700">${geannuleerd.length}</span></div>
+        ${(()=>{
+          const sdIds=new Set(parsed.map(p=>p.sdId+'_'+p.loftId));
+          const ontbreekt=bookings.filter(b=>b.sdId&&!sdIds.has(b.sdId+'_'+b.loftId)).length;
+          const totVerw=geannuleerd.length+ontbreekt;
+          return totVerw>0?`<div style="display:flex;justify-content:space-between"><span style="color:var(--dh-red)">🗑 Te verwijderen:</span><span style="color:var(--dh-red);font-weight:700">${totVerw}</span></div>`:'';
+        })()}
         <div style="display:flex;justify-content:space-between"><span style="color:var(--dh-muted)">⏭ Overgeslagen:</span><span style="color:var(--dh-muted);font-weight:700">${skip}</span></div>
       </div>
       <div style="margin-top:8px;display:flex;flex-direction:column;gap:3px">
@@ -8616,6 +8621,14 @@ function _sdImportBevestigen(){
       db.taken=db.taken.filter(t=>t.bkId!==bkId);
       verwijderd++;
     }
+  });
+  // Verwijder ook boekingen die niet meer in het exportbestand staan (verdwenen uit Stardekk)
+  const sdIdsInBestand = new Set(window._sdParsed.map(p=>p.sdId+'_'+p.loftId));
+  const teVerwijderen = bookings.filter(b=>b.sdId && !sdIdsInBestand.has(b.sdId+'_'+b.loftId));
+  teVerwijderen.forEach(b=>{
+    bookings = bookings.filter(x=>x.id!==b.id);
+    db.taken = db.taken.filter(t=>t.bkId!==b.id);
+    verwijderd++;
   });
   window._sdParsed.forEach(p=>{
     const idx=bookings.findIndex(b=>b.sdId===p.sdId&&b.loftId===p.loftId);
@@ -8661,6 +8674,14 @@ async function spSyncStardekk(silent){
     geannuleerd.forEach(p=>{
       const idx=bookings.findIndex(b=>b.sdId===p.sdId&&b.loftId===p.loftId);
       if(idx!==-1){const bkId=bookings[idx].id;bookings.splice(idx,1);db.taken=db.taken.filter(t=>t.bkId!==bkId);verwijderd++;}
+    });
+    // Verwijder ook boekingen die niet meer in het exportbestand staan
+    const sdIdsInBestand2=new Set(parsed.map(p=>p.sdId+'_'+p.loftId));
+    const teVerwijderen2=bookings.filter(b=>b.sdId&&!sdIdsInBestand2.has(b.sdId+'_'+b.loftId));
+    teVerwijderen2.forEach(b=>{
+      bookings=bookings.filter(x=>x.id!==b.id);
+      db.taken=db.taken.filter(t=>t.bkId!==b.id);
+      verwijderd++;
     });
     parsed.forEach(p=>{
       const idx=bookings.findIndex(b=>b.sdId===p.sdId&&b.loftId===p.loftId);
