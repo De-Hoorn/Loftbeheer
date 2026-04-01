@@ -2353,19 +2353,28 @@ function getProfielById(pid){
 function loginProfile(pid){ doLogin(pid); } // legacy compat
 
 async function initStep1(){
-  await spInit();
-  const accs=_msalApp.getAllAccounts();
-  if(!accs.length){_spLoginBanner();return;}
-  const token=await spGetToken();
-  if(!token)return;
-  if(_spReady){
-    await spLoad();
-    try{localStorage.setItem('dh7_LEEG_db',JSON.stringify(db));}catch(e){}
-    try{localStorage.setItem('dh4_LEEG_bookings',JSON.stringify(bookings));}catch(e){}
-    load();loadBookings();
-    // Auto-sync Stardekk export bij opstarten (stil — geen toast)
-    spSyncStardekk(true);
-  }
+  // SP auth — volledig niet-blokkerend
+  // App start altijd op, SP verbinding is optioneel
+  try {
+    await spInit();
+    const accs = _msalApp ? _msalApp.getAllAccounts() : [];
+    if(accs.length){
+      // Al ingelogd — stil token ophalen
+      try {
+        const resp = await _msalApp.acquireTokenSilent({scopes:SP_SCOPES, account:accs[0]});
+        _spAccount = accs[0];
+        _spToken = resp.accessToken;
+        _spReady = true;
+        await spLoad();
+        try{localStorage.setItem('dh7_LEEG_db',JSON.stringify(db));}catch(e){}
+        try{localStorage.setItem('dh4_LEEG_bookings',JSON.stringify(bookings));}catch(e){}
+        load(); loadBookings();
+        spSyncStardekk(true);
+      } catch(e){ console.warn('SP token mislukt:', e.message); }
+    }
+    // Niet ingelogd → app start gewoon op, geen banner
+  } catch(e){ console.warn('SP init mislukt:', e.message); }
+
   const PETJES = [
     { groep:'eigenaar',   ico:'🏛', label:'Eigenaar',   kleur:'#c8922a' },
     { groep:'inspecteur', ico:'🔍', label:'Inspecteur', kleur:'#2a8a4a' },
