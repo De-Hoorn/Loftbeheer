@@ -607,10 +607,7 @@ select option { background:var(--dh-sur); color:var(--dh-cream); }
 /* ═══ BOOKING FORM ═══ */
 .booking-form-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
 </style>
-  <script>
-// Laad MSAL met fallback
-</script>
-<script src="https://unpkg.com/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library/3.14.0/msal-browser.min.js"></script>
 </head>
 <body>
 <!-- Mobile hamburger knop -->
@@ -753,7 +750,7 @@ select option { background:var(--dh-sur); color:var(--dh-cream); }
       <div><div class="sb-uname" id="sbUname"></div><div class="sb-urole" id="sbUrole"></div></div>
       <button class="sb-out" onclick="logout()" title="Afmelden">↩</button>
     </div>
-    <div style="text-align:center;padding:6px 0 2px;font-size:9px;color:var(--dh-muted);letter-spacing:.5px">v6 · De Hoorn Loftbeheer · <span id='sp-status' style='color:var(--dh-muted)'>SP</span> · SP</div>
+    <div style="text-align:center;padding:6px 0 2px;font-size:9px;color:var(--dh-muted);letter-spacing:.5px">v6 · De Hoorn Loftbeheer · SP · SP</div>
   </div>
 </nav>
 
@@ -994,7 +991,7 @@ select option { background:var(--dh-sur); color:var(--dh-cream); }
 const SP_CONFIG={clientId:'6528afb4-1859-4d3d-8bb0-953ea3745cb8',tenantId:'b2c16f77-0c93-49cd-83e1-d694b30d4b81',driveId:'b!RVDjVAgIRUuRSWg1tcEBLEQD4kHFu99DpmmpYPwIaRhSrFbWCzIERLkn8s4idee1',folderId:'01LXBVUAUKAQRVBU5DSNAKSZ3RGV26AIAX',dbFile:'db.json',bkFile:'bookings.json'};
 const SP_SCOPES=['https://graph.microsoft.com/Files.ReadWrite','https://graph.microsoft.com/Sites.ReadWrite.All'];
 let _msalApp=null,_spAccount=null,_spToken=null,_spReady=false,_saveTimeout=null;
-async function spInit(){if(_msalApp)return;_msalApp=new msal.PublicClientApplication({auth:{clientId:SP_CONFIG.clientId,authority:'https://login.microsoftonline.com/'+SP_CONFIG.tenantId,redirectUri:'https://De-Hoorn.github.io/Loftbeheer/'},cache:{cacheLocation:'sessionStorage',storeAuthStateInCookie:true}});await _msalApp.initialize();try{const r=await _msalApp.handleRedirectPromise();if(r&&r.account){_spAccount=r.account;_spToken=r.accessToken;_spReady=true;}}catch(e){}}
+async function spInit(){if(_msalApp)return;_msalApp=new msal.PublicClientApplication({auth:{clientId:SP_CONFIG.clientId,authority:'https://login.microsoftonline.com/'+SP_CONFIG.tenantId,redirectUri:window.location.href.split('?')[0].split('#')[0]},cache:{cacheLocation:'sessionStorage',storeAuthStateInCookie:true}});await _msalApp.initialize();try{const r=await _msalApp.handleRedirectPromise();if(r&&r.account){_spAccount=r.account;_spToken=r.accessToken;_spReady=true;}}catch(e){}}
 async function spGetToken(){await spInit();const a=_msalApp.getAllAccounts();if(a.length)_spAccount=a[0];try{const r=await _msalApp.acquireTokenSilent({scopes:SP_SCOPES,account:_spAccount});_spAccount=r.account;_spToken=r.accessToken;_spReady=true;return r.accessToken;}catch(e){await _msalApp.acquireTokenRedirect({scopes:SP_SCOPES});return null;}}
 async function spReadFile(n){const t=await spGetToken();if(!t)return null;try{const r=await fetch('https://graph.microsoft.com/v1.0/drives/'+SP_CONFIG.driveId+'/items/'+SP_CONFIG.folderId+':/'+n+':/content',{headers:{Authorization:'Bearer '+t}});if(!r.ok)return null;return await r.json();}catch(e){return null;}}
 async function spWriteFile(n,d){const t=await spGetToken();if(!t)return false;try{const r=await fetch('https://graph.microsoft.com/v1.0/drives/'+SP_CONFIG.driveId+'/items/'+SP_CONFIG.folderId+':/'+n+':/content',{method:'PUT',headers:{Authorization:'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify(d)});return r.ok;}catch(e){return false;}}
@@ -2356,21 +2353,18 @@ function getProfielById(pid){
 function loginProfile(pid){ doLogin(pid); } // legacy compat
 
 async function initStep1(){
-  // SP auth — niet-blokkerend
-  try {
-    await spInit();
-    if(_spReady){
-      await spLoad();
-      try{localStorage.setItem('dh7_LEEG_db',JSON.stringify(db));}catch(e){}
-      try{localStorage.setItem('dh4_LEEG_bookings',JSON.stringify(bookings));}catch(e){}
-      load(); loadBookings();
-      const el=document.getElementById('sp-status');
-      if(el) el.innerHTML='🟢 SP';
-    } else {
-      _spLoginBanner(); return;
-    }
-  } catch(e){
-    console.warn('SP fout, localStorage:', e.message);
+  await spInit();
+  const accs=_msalApp.getAllAccounts();
+  if(!accs.length){_spLoginBanner();return;}
+  const token=await spGetToken();
+  if(!token)return;
+  if(_spReady){
+    await spLoad();
+    try{localStorage.setItem('dh7_LEEG_db',JSON.stringify(db));}catch(e){}
+    try{localStorage.setItem('dh4_LEEG_bookings',JSON.stringify(bookings));}catch(e){}
+    load();loadBookings();
+    // Auto-sync Stardekk export bij opstarten (stil — geen toast)
+    spSyncStardekk(true);
   }
   const PETJES = [
     { groep:'eigenaar',   ico:'🏛', label:'Eigenaar',   kleur:'#c8922a' },
@@ -7659,6 +7653,7 @@ function renderBeheer(){
     {id:'checklists', ico:'🧹', lbl:'Checklists'},
     {id:'poets',      ico:'🧹', lbl:'Poetstoewijzing'},
     {id:'feestdagen', ico:'📅', lbl:'Feestdagen'},
+    {id:'stardekk',   ico:'📥', lbl:'Stardekk'},
   ];
   
   let html = `
@@ -7688,6 +7683,49 @@ function renderBeheer(){
   if(tab === 'feestdagen') html += _beheerFeestdagen();
   
   html += '</div></div>';
+  // Stardekk tab
+  if(tab==='stardekk'){
+    html += `
+      <div style="display:flex;flex-direction:column;gap:20px;padding:8px 0">
+        <div style="font-size:13px;color:var(--dh-muted);line-height:1.7">
+          Importeer boekingen rechtstreeks vanuit een Stardekk Excel-export.
+          De app herkent automatisch de loftnummers, gastnamen en datums.
+        </div>
+        <div style="background:var(--dh-sur2);border:1px solid var(--dh-bdr);border-radius:8px;padding:14px">
+          <div style="font-size:11px;color:var(--dh-muted);margin-bottom:8px;font-weight:700">HOE EXPORTEREN UIT STARDEKK</div>
+          <div style="font-size:12px;color:var(--dh-cream);display:flex;flex-direction:column;gap:6px">
+            <div>1. Ga naar <strong>Reservaties</strong> in Stardekk</div>
+            <div>2. Klik op <strong>Exporteren</strong> of het Excel-icoon</div>
+            <div>3. Kies datumbereik en klik <strong>Exporteren</strong></div>
+            <div>4. Upload het .xlsx bestand hieronder</div>
+          </div>
+        </div>
+        <div style="background:var(--dh-sur);border:1.5px solid var(--dh-gold-l);border-radius:10px;padding:14px 16px;margin-bottom:14px">
+          <div style="font-size:11px;font-weight:700;color:var(--dh-gold);margin-bottom:6px">⚡ AUTOMATISCH — via SharePoint</div>
+          <div style="font-size:12px;color:var(--dh-muted);line-height:1.6;margin-bottom:10px">
+            Zet het Stardekk-exportbestand op SharePoint onder de vaste naam hieronder.
+            De app laadt het automatisch bij elke opstart.
+          </div>
+          <div style="font-size:11px;background:var(--dh-sur2);border-radius:6px;padding:8px 10px;margin-bottom:10px;font-family:monospace;color:var(--dh-cream)">
+            📁 04. GEBOUWBEHEER / LoftBeheer / <strong>stardekk_export.xlsx</strong>
+          </div>
+          <button onclick="spSyncStardekk(false)"
+            style="background:var(--dh-gold);color:#1a1a18;border:none;border-radius:8px;
+              padding:10px 20px;font-size:13px;font-weight:800;cursor:pointer;width:100%">
+            🔄 Nu synchroniseren
+          </button>
+        </div>
+        <div style="border-top:1px solid var(--dh-bdr);padding-top:14px">
+          <div style="font-size:11px;font-weight:700;color:var(--dh-muted);margin-bottom:8px">📂 MANUEEL — bestand uploaden</div>
+          <button onclick="openStardekkImport()"
+            style="background:var(--dh-sur2);border:1.5px solid var(--dh-bdr);border-radius:8px;
+              padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;color:var(--dh-cream);width:100%">
+            📥 Excel bestand uploaden
+          </button>
+        </div>
+      </div>`;
+  }
+
   el.innerHTML = html;
 }
 
