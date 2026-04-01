@@ -3155,7 +3155,7 @@ function renderGastStart(loftId){
     <div style="text-align:center;padding:20px 0 32px">
       <div style="font-family:var(--disp);font-size:52px;font-weight:800;color:var(--dh-gold);line-height:1">${loftId}</div>
       <div style="font-size:14px;color:var(--dh-text);margin-top:4px">${tagL} · Verdieping ${loft?.floor}</div>
-      ${bk?`<div style="font-size:11px;color:var(--dh-muted);margin-top:6px">Welkom ${bk.name} · t/m ${fmtDate(bk.checkOut)}</div>`:''}
+      ${bk?`<div style="font-size:11px;color:var(--dh-muted);margin-top:6px">Welkom ${bk.name||bk.gast||""} · t/m ${fmtDate(bk.checkOut)}</div>`:''}
     </div>
 
     <div style="background:var(--dh-sur);border:1px solid var(--dh-bdr);border-radius:12px;padding:20px;margin-bottom:16px">
@@ -3535,7 +3535,7 @@ function renderDash(){
     const label={bezet:'Bezet',checkin:'Check-in',checkout:'Check-out',vrij:'Vrij'}[status];
     return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--dh-bdr)">
       <div style="font-family:var(--disp);font-size:11px;font-weight:700;color:var(--dh-gold);width:28px">${l.id}</div>
-      <div style="flex:1;font-size:10px;color:var(--dh-text)">${bk?bk.name:ci?ci.name:co?co.name:'—'}</div>
+      <div style="flex:1;font-size:10px;color:var(--dh-text)">${bk?(bk.name||bk.gast):ci?(ci.name||ci.gast):co?(co.name||co.gast):'—'}</div>
       <div style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;background:${dotColor}22;color:${dotColor}">${label}</div>
     </div>`;
   }).join('');
@@ -3585,8 +3585,8 @@ function renderAgenda(){
       if(isCO&&!bk) cell=`<div class="booking-block bb-checkout" style="width:50%;left:0;right:auto" title="Check-out ${isCO.name}">↩</div>`;
       if(bk){
         const cls=isCI?'bb-checkin':bk.status==='option'?'bb-option':'bb-confirmed';
-        const lbl=isCI?`↓ ${bk.name}`:bk.name;
-        cell=`<div class="booking-block ${cls}" title="${bk.name}" onclick="openBoekingDetail('${bk.id}')"><span style="overflow:hidden;text-overflow:ellipsis">${isCI?'▶':''} ${bk.name}</span></div>`;
+        const _nm=bk.name||bk.gast||'—';const lbl=isCI?`↓ ${_nm}`:_nm;
+        cell=`<div class="booking-block ${cls}" title="${bk.name||bk.gast||'—'}" onclick="openBoekingDetail('${bk.id}')"><span style="overflow:hidden;text-overflow:ellipsis">${isCI?'▶':''} ${bk.name||bk.gast||'—'}</span></div>`;
       }
       html+=`<td class="${isToday?'today-col':''}"><div class="cal-cell">${cell}</div></td>`;
     });
@@ -3677,7 +3677,7 @@ function openBoekingDetail(bkId){
       }).join('')}
     </div>` : '';
 
-  document.getElementById('mTtitle').textContent = `🏠 ${bk.loftId} — ${bk.name}`;
+  document.getElementById('mTtitle').textContent = `🏠 ${bk.loftId} — ${bk.name||bk.gast||'—'}`;
   document.querySelector('#mT .mb').innerHTML = `
     <div style="display:flex;flex-direction:column;gap:10px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
@@ -4284,7 +4284,7 @@ function renderLofts(){
     if(uitDienst){
       kleur='#707070'; label=`Uit dienst${uitDienst.reden?' · '+uitDienst.reden:''}`; ico='⛔';
     } else if(bk){
-      kleur='var(--dh-red)'; label=`Bezet · ${bk.name}`; ico='🔴';
+      kleur='var(--dh-red)'; label=`Bezet · ${bk.name||bk.gast||'—'}`; ico='🔴';
     } else if(bookings.find(b=>b.loftId===l.id && b.checkIn===todayStr)){
       // Check-in dag: gast komt vandaag aan
       const ci_bk = bookings.find(b=>b.loftId===l.id && b.checkIn===todayStr);
@@ -4357,7 +4357,7 @@ function loftDetail(loftId){
   );
   let kleur, statusTxt;
   if(uitDienst){ kleur='#888'; statusTxt='Uit dienst'+(uitDienst.reden?' - '+uitDienst.reden:''); }
-  else if(bk){ kleur='var(--dh-red)'; statusTxt='Bezet - '+bk.name+' t/m '+fmtDate(bk.checkOut); }
+  else if(bk){ kleur='var(--dh-red)'; statusTxt='Bezet - '+(bk.name||bk.gast||'—')+' t/m '+fmtDate(bk.checkOut); }
   else if(poetsTaken.length){ kleur='var(--dh-ora)'; statusTxt='Poets vereist voor verhuur'; }
   else if(isGecheckt2){ kleur='var(--dh-blue)'; statusTxt='Gecheckt door inspecteur'; }
   else { kleur='var(--dh-grn)'; statusTxt='Verhuurklaar (niet gecheckt)'; }
@@ -4586,7 +4586,7 @@ function bouwInspectieItems(){
       const gedaan = !!db.inspectie_states?.[inspKey];
       items.push({
         id: inspKey, loftId:l.id, type:'pre_checkin',
-        diffDagen: diff, checkIn: b.checkIn, guestName: b.name,
+        diffDagen: diff, checkIn: b.checkIn, guestName: b.name||b.gast||'—',
         kanNu: poetsKlaar && diff <= 3,   // kan pas als gepoetst & ≤3 dagen voor CI
         gedaan, bron:'auto',
       });
@@ -5473,7 +5473,7 @@ function schoonmaakCumulLoft(cumulId, loftId){
   const mb = document.querySelector('#mT .mb');
   mb.innerHTML = `
     <div style="margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--dh-bdr)">
-      <div style="font-size:10px;color:var(--dh-muted)">${bk?`🔴 Bezet — ${bk.name}`:'🟢 Loft vrij vandaag'}</div>
+      <div style="font-size:10px;color:var(--dh-muted)">${bk?`🔴 Bezet — ${bk.name||bk.gast||'—'}`:'🟢 Loft vrij vandaag'}</div>
     </div>
     ${items.length
       ? items.map(item=>`
@@ -7233,7 +7233,7 @@ setTimeout(function(){
       const vBk = bookings.find(b=>b.loftId===bk.loftId&&b.checkIn>bk.checkOut&&b.id!==bk.id);
       const ep = berekenEindpoetsDatum(bk.checkOut, vBk?.checkIn||null);
       addTaak({type:'poets', loftId:bk.loftId, titel:'Eindpoets',
-        desc:'Eindpoets — '+bk.name, bron:'boeking', door:'systeem',
+        desc:'Eindpoets — '+(bk.name||bk.gast||'—'), bron:'boeking', door:'systeem',
         toegewezenAan:db.poetsConfig?.eindpoets?.rol||'schoonmaak_n1',
         datum:ep.datum, tijdVan:ep.tijdVan, tijdTot:ep.tijdTot,
         prio:'normaal', bkId:bk.id});
@@ -7278,7 +7278,7 @@ function renderSchoonmaakTaken(el, niveaus){
       if(heeftTaak) return; // al in db.taken → niet dubbel tonen
       const nextBk = sortedBk[idx+1];
       const {datum} = optimalePoetsDatum(bk.checkOut, nextBk?.checkIn||null);
-      systeemTaken.push({_systeem:true, loftId:l.id, bkNaam:bk.name,
+      systeemTaken.push({_systeem:true, loftId:l.id, bkNaam:bk.name||bk.gast||'—',
         checkOut:bk.checkOut, datum, diff, sortKey:datum.getTime()});
     });
   });
@@ -7400,7 +7400,7 @@ function openPoetsDetail(taakId){
     document.getElementById('mTtitle').textContent = `${ico} ${t.titel} — Loft ${t.loftId}`;
     document.querySelector('#mT .mb').innerHTML = `
       <div style="font-size:11px;color:var(--dh-muted);margin-bottom:14px">
-        ${bk?bk.name+' · ':''} ${t.tijdVan?'na '+t.tijdVan:''}
+        ${bk?(bk.name||bk.gast||'—')+' · ':''} ${t.tijdVan?'na '+t.tijdVan:''}
       </div>
       <div style="background:var(--dh-sur2);border:1px solid var(--dh-bdr);border-radius:10px;padding:12px 16px;margin-bottom:12px">
         <div style="font-size:10px;font-weight:700;color:var(--dh-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">
@@ -7441,7 +7441,7 @@ function openPoetsDetail(taakId){
   document.getElementById('mTtitle').textContent = `🧹 ${t.titel} — Loft ${t.loftId}`;
   document.querySelector('#mT .mb').innerHTML = `
     <div style="font-size:11px;color:var(--dh-muted);margin-bottom:12px">
-      ${bk?`${bk.name} · check-out ${fmtDate(t.datum||t.date)}`:''}
+      ${bk?`${bk.name||bk.gast||'—'} · check-out ${fmtDate(t.datum||t.date)}`:''}
       ${t.tijdVan?` · na ${t.tijdVan}`:''}${t.tijdTot?` · voor ${t.tijdTot}`:''}
     </div>
     <div style="margin-bottom:14px">${clHtml}</div>
@@ -7480,7 +7480,7 @@ function renderInspecteurTaken(el){
       if(db.inspectie_states?.[inspKey]?.gedaan) return;
       const prevBk = sortedBk[idx-1];
       const poetsKlaar = !prevBk || !!db.clState?.[`poets_${l.id}_${prevBk.checkOut}`];
-      preChecks.push({id:inspKey, loftId:l.id, checkIn:bk.checkIn, naam:bk.name, diff, poetsKlaar});
+      preChecks.push({id:inspKey, loftId:l.id, checkIn:bk.checkIn, naam:bk.name||bk.gast||'—', diff, poetsKlaar});
     });
   });
 
@@ -8581,7 +8581,7 @@ function _sdParse(buf){
   const wb=XLSX.read(buf,{type:'array',cellDates:true});
   const ws=wb.Sheets[wb.SheetNames[0]];
   const rows=XLSX.utils.sheet_to_json(ws,{raw:false,dateNF:'yyyy-mm-dd'});
-  const {parsed,skip}=_sdParseRows(rows);
+  const {parsed,geannuleerd,skip}=_sdParseRows(rows);
   window._sdParsed=parsed;
   window._sdGeannuleerd=geannuleerd;
   const nieuw=parsed.filter(p=>!bookings.find(b=>b.sdId===p.sdId&&b.loftId===p.loftId)).length;
