@@ -3521,14 +3521,29 @@ function startApp(){
   buildSidebar();
   const rol = curProfile?.rol || 'eigenaar';
   const defaults={eigenaar:'dashboard',inspecteur:'taken',inspecteur_n1:'inspecties',inspecteur_n2:'inspecties',schoonmaak_n1:'taken',schoonmaak_n2:'taken',tech_n1:'taken',tech_n2:'taken',gast:'checklist'};
-  nav(defaults[rol]||'dashboard');
-  var _dbg = document.getElementById('fb-debug-txt');
-  var _dbgBox = document.getElementById('fb-debug');
-  if(_dbg){ _dbg.innerHTML += '<div>startApp: nav=' + (defaults[rol]||'dashboard') + ' bookings=' + bookings.length + '</div>'; if(_dbgBox) _dbgBox.style.display='block'; }
-  setTimeout(function(){
-    if(_dbg){ _dbg.innerHTML += '<div>setTimeout: curPage=' + _curPage + ' bookings=' + bookings.length + '</div>'; }
-    try{ if(typeof renderP==='function'&&_curPage) renderP(_curPage); }catch(e){ if(_dbg) _dbg.innerHTML += '<div style="color:red">renderP fout: '+e.message+'</div>'; }
-  }, 800);
+  const startPagina = defaults[rol]||'dashboard';
+  // Wacht tot Firebase bookings geladen zijn voor eerste render
+  function _doStart(){
+    nav(startPagina);
+  }
+  if(window._fbBookingsKlaar || bookings.length > 0){
+    _doStart();
+  } else {
+    // Toon laadscherm en wacht op Firebase
+    var mainEl = document.querySelector('.content');
+    if(mainEl) mainEl.innerHTML = '<div style="padding:40px;text-align:center;color:var(--dh-muted)"><div style="font-size:32px;margin-bottom:12px">⏳</div><div>Data laden...</div></div>';
+    var _wait = setInterval(function(){
+      if(window._fbBookingsKlaar || bookings.length > 0){
+        clearInterval(_wait);
+        _doStart();
+      }
+    }, 100);
+    // Na max 5 seconden toch starten
+    setTimeout(function(){
+      clearInterval(_wait);
+      _doStart();
+    }, 5000);
+  }
 }
 
 function toggleSidebar(){
