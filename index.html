@@ -1206,6 +1206,20 @@ async function fbLoad(){
       db.loftConfig       = _fbObjFix(db.loftConfig);
       _fbDbKlaar = true;
       console.log('FB db geladen, taken:', db.taken.length, 'team:', db.team.length);
+      // Als Firebase geen taken heeft maar lokaal wel → push lokale taken
+      if(db.taken.length === 0){
+        var localDb = null;
+        try{ localDb = JSON.parse(localStorage.getItem('dh7_LEEG_db')||'null'); }catch(e){}
+        if(localDb && localDb.taken && localDb.taken.length > 0){
+          db.taken = localDb.taken;
+          console.log('Lokale taken gebruikt:', db.taken.length);
+          // Push naar Firebase
+          setTimeout(async function(){
+            try{ await _fbDb.ref('loftbeheer/db/taken').set(_fbSan(db.taken)); console.log('Lokale taken naar FB gepusht:', db.taken.length); }
+            catch(e){ console.warn('Taken push fout:', e.message); }
+          }, 1000);
+        }
+      }
     } else {
       // Eerste keer: push lokale db
       var ld = null;
@@ -1238,8 +1252,13 @@ async function fbLoad(){
     // Luister naar db en bookings apart zodat updates niet door elkaar lopen
     _fbDb.ref('loftbeheer/db').on('value', function(s){
       if(!s.exists() || _fbPushInProgress) return;
-      db = s.val();
-      db.taken      = _fbArrFix(db.taken);
+      var fbDb = s.val();
+      // Merge: bewaar lokale taken als Firebase die leeg heeft
+      // (voorkomt dat live updates lokale wijzigingen overschrijven)
+      var localTaken = db.taken || [];
+      var fbTaken = _fbArrFix(fbDb.taken);
+      db = fbDb;
+      db.taken      = fbTaken.length > 0 ? fbTaken : localTaken;
       db.team       = _fbArrFix(db.team);
       db.periodiek  = _fbArrFix(db.periodiek);
       db.history    = _fbArrFix(db.history);
