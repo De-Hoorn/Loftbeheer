@@ -3520,10 +3520,11 @@ function startApp(){
   document.getElementById('app').style.display='block';
   buildSidebar();
   const rol = curProfile?.rol || 'eigenaar';
-  const defaults={eigenaar:'dashboard',inspecteur:'taken',inspecteur_n1:'inspecties',inspecteur_n2:'inspecties',schoonmaak_n1:'taken',schoonmaak_n2:'taken',tech_n1:'taken',tech_n2:'taken',gast:'checklist'};
+  const defaults={eigenaar:'bezetting',inspecteur:'taken',inspecteur_n1:'inspecties',inspecteur_n2:'inspecties',schoonmaak_n1:'taken',schoonmaak_n2:'taken',tech_n1:'taken',tech_n2:'taken',gast:'checklist'};
   const startPagina = defaults[rol]||'dashboard';
   // Wacht tot Firebase bookings geladen zijn voor eerste render
   function _doStart(){
+    alert('doStart: '+startPagina+' bk='+bookings.length+' klaar='+window._fbBookingsKlaar);
     nav(startPagina);
   }
   if(window._fbBookingsKlaar || bookings.length > 0){
