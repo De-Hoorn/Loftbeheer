@@ -3667,6 +3667,7 @@ function renderP(p){
   if(p==='dashboard') renderDash();
   if(p==='triage')    renderTriage();
   if(p==='bezetting'){
+    alert('renderP bezetting, bookings:'+bookings.length);
     renderAgenda();
     const isEig = (rolNiveaus(curProfile?.id||'')||[]).includes('eigenaar');
     const btn = document.getElementById('printPlanBtn');
