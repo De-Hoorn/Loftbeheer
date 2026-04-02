@@ -3511,9 +3511,12 @@ function startApp(){
   const rol = curProfile?.rol || 'eigenaar';
   const defaults={eigenaar:'dashboard',inspecteur:'taken',inspecteur_n1:'inspecties',inspecteur_n2:'inspecties',schoonmaak_n1:'taken',schoonmaak_n2:'taken',tech_n1:'taken',tech_n2:'taken',gast:'checklist'};
   nav(defaults[rol]||'dashboard');
-  // Herrender na korte wachttijd — Firebase data is dan zeker beschikbaar
+  var _dbg = document.getElementById('fb-debug-txt');
+  var _dbgBox = document.getElementById('fb-debug');
+  if(_dbg){ _dbg.innerHTML += '<div>startApp: nav=' + (defaults[rol]||'dashboard') + ' bookings=' + bookings.length + '</div>'; if(_dbgBox) _dbgBox.style.display='block'; }
   setTimeout(function(){
-    try{ if(typeof renderP==='function'&&_curPage) renderP(_curPage); }catch(e){}
+    if(_dbg){ _dbg.innerHTML += '<div>setTimeout: curPage=' + _curPage + ' bookings=' + bookings.length + '</div>'; }
+    try{ if(typeof renderP==='function'&&_curPage) renderP(_curPage); }catch(e){ if(_dbg) _dbg.innerHTML += '<div style="color:red">renderP fout: '+e.message+'</div>'; }
   }, 800);
 }
 
