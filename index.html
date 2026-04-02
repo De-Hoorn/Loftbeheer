@@ -1131,17 +1131,14 @@ var st,ct,ut,lt,dt,ht,pt,gt,ft,mt=function(){function t(e,t,r){this.networkInter
       if(snap.exists()){
         var data = snap.val();
         if(data.db){ window.db = _fbRestoreKeys(data.db); }
-        if(data.bookings && Array.isArray(data.bookings) && data.bookings.length > 0){
-          window.bookings = _fbRestoreKeys(data.bookings);
-          console.log('FB bookings geladen:', data.bookings.length);
+        var fbBk = (data.bookings && Array.isArray(data.bookings)) ? data.bookings : [];
+        if(fbBk.length > 0){
+          // Firebase is master — altijd Firebase bookings gebruiken
+          window.bookings = _fbRestoreKeys(fbBk);
+          console.log('FB bookings geladen:', fbBk.length);
         } else {
-          var lb = null;
-          try{ lb = JSON.parse(localStorage.getItem('dh4_LEEG_bookings')||'null'); }catch(e){}
-          if(Array.isArray(lb) && lb.length > 0){
-            window.bookings = lb;
-            await _fbDb.ref('loftbeheer/bookings').set(_fbSanitizeKeys(lb));
-            console.log('Lokale bookings naar FB:', lb.length);
-          }
+          // Firebase heeft nog geen bookings (eerste keer) → wacht op manuele push
+          console.log('Firebase heeft nog geen bookings — gebruik Push knop na Stardekk import');
         }
       } else {
         var ld = null; var lb2 = null;
@@ -9010,11 +9007,18 @@ async function fbPushNow(){
   if(ico) ico.textContent = '⏳';
   if(txt) txt.textContent = 'Bezig...';
   try {
+    // Gebruik altijd de lokale localStorage als bron — dit is de meest recente versie
+    // (Firebase kan verouderd zijn als er lokaal al een import gedaan werd)
+    const localBk = JSON.parse(localStorage.getItem('dh4_LEEG_bookings') || '[]');
+    const localDb = JSON.parse(localStorage.getItem('dh7_LEEG_db') || 'null');
+    if(localBk.length > 0) window.bookings = localBk;
+    if(localDb) window.db = localDb;
+    toast('📤 ' + window.bookings.length + ' bookings naar Firebase...', 'ok');
     await window.fbSaveBookings();
     if(ico) ico.textContent = '✅';
-    if(txt) txt.textContent = 'Firebase bijgewerkt';
-    toast('✅ Bookings + data naar Firebase gepusht','ok');
-    setTimeout(()=>{ if(ico) ico.textContent='🔥'; if(txt) txt.textContent='Push naar Firebase'; }, 3000);
+    if(txt) txt.textContent = 'Firebase bijgewerkt (' + window.bookings.length + ')';
+    toast('✅ ' + window.bookings.length + ' bookings naar Firebase gepusht','ok');
+    setTimeout(()=>{ if(ico) ico.textContent='🔥'; if(txt) txt.textContent='Push naar Firebase'; }, 4000);
   } catch(e) {
     if(ico) ico.textContent = '❌';
     if(txt) txt.textContent = 'Push mislukt';
