@@ -1179,8 +1179,9 @@ async function fbLoad(){
         if(bk.length) bookings = bk;
       }
       if(curProfile){
-        try{ if(typeof renderAgenda==='function') renderAgenda(); }catch(e){}
         try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
+        // Herrender actieve pagina
+        try{ if(typeof renderP==='function' && _curPage) renderP(_curPage); }catch(e){}
       }
     });
     return true;
