@@ -7764,7 +7764,7 @@ function renderSchoonmaakTaken(el, niveaus){
   el.innerHTML = html;
   // Event delegation systeemtaken
   el.querySelectorAll('.systeem-poets-kaart').forEach(function(div){
-    div.addEventListener('click', function(){ var l=div.dataset.loft,c=div.dataset.co,n=div.dataset.naam; if(l&&c) openSysteemPoets(l,c,n); });
+    div.addEventListener('click', function(){ var l=div.dataset.loft,c=div.dataset.co,n=div.dataset.naam; if(l&&c) _systeemPoetsKlik(div); });
   });
   el.querySelectorAll('.gedaan-btn').forEach(function(btn){
     btn.addEventListener('click', function(e){ e.stopPropagation(); markSysteemPoetsKlaar(btn.dataset.loft,btn.dataset.co); });
