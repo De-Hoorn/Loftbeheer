@@ -822,7 +822,16 @@ var st,ct,ut,lt,dt,ht,pt,gt,ft,mt=function(){function t(e,t,r){this.networkInter
       <div><div class="sb-uname" id="sbUname"></div><div class="sb-urole" id="sbUrole"></div></div>
       <button class="sb-out" onclick="logout()" title="Afmelden">↩</button>
     </div>
-    <div style="text-align:center;padding:6px 0 2px;font-size:9px;color:var(--dh-muted);letter-spacing:.5px">v6 · De Hoorn Loftbeheer · SP · SP</div>
+    <div id="sp-login-row" style="padding:6px 12px 4px">
+    <button onclick="spAanmelden()" id="sp-login-knop"
+      style="width:100%;background:var(--dh-sur2);border:1px solid var(--dh-bdr);
+        border-radius:6px;padding:6px 10px;font-size:10px;color:var(--dh-muted);
+        cursor:pointer;display:flex;align-items:center;gap:6px;justify-content:center">
+      <span id="sp-status-ico">🔓</span>
+      <span id="sp-status-txt">Aanmelden op SharePoint</span>
+    </button>
+  </div>
+  <div style="text-align:center;padding:2px 0 2px;font-size:9px;color:var(--dh-muted);letter-spacing:.5px">v6 · De Hoorn Loftbeheer</div>
   </div>
 </nav>
 
@@ -2451,6 +2460,7 @@ async function initStep1(){
         try{localStorage.setItem('dh4_LEEG_bookings',JSON.stringify(bookings));}catch(e){}
         load(); loadBookings();
         spSyncStardekk(true);
+        _spUpdateKnop();
       } catch(e){ console.warn('SP token mislukt:', e.message); }
     }
     // Niet ingelogd → app start gewoon op, geen banner
@@ -8791,6 +8801,54 @@ async function spSyncStardekk(silent){
   } catch(e){
     if(!silent)toast('Sync mislukt: '+e.message,'err');
     return false;
+  }
+}
+
+
+// SP aanmeld-knop
+async function spAanmelden(){
+  const knop = document.getElementById('sp-login-knop');
+  const txt  = document.getElementById('sp-status-txt');
+  const ico  = document.getElementById('sp-status-ico');
+  if(_spReady){
+    // Al ingelogd → sync uitvoeren
+    txt.textContent = 'Synchroniseren...';
+    await spLoad();
+    try{localStorage.setItem('dh7_LEEG_db',JSON.stringify(db));}catch(e){}
+    try{localStorage.setItem('dh4_LEEG_bookings',JSON.stringify(bookings));}catch(e){}
+    load(); loadBookings();
+    spSyncStardekk(true);
+    renderDash();
+    ico.textContent = '🟢';
+    txt.textContent = 'SP verbonden';
+    toast('✅ Data gesynchroniseerd van SharePoint','ok');
+    return;
+  }
+  // Nog niet ingelogd → login starten
+  txt.textContent = 'Aanmelden...';
+  try {
+    await spInit();
+    await _msalApp.acquireTokenRedirect({ scopes: SP_SCOPES });
+    // Pagina herlaadt na login
+  } catch(e){
+    txt.textContent = 'Aanmelden mislukt';
+    toast('Login mislukt: '+e.message,'err');
+  }
+}
+
+// Update SP knop status
+function _spUpdateKnop(){
+  const ico = document.getElementById('sp-status-ico');
+  const txt = document.getElementById('sp-status-txt');
+  if(!ico||!txt) return;
+  if(_spReady){
+    ico.textContent = '🟢';
+    txt.textContent = 'SP verbonden · klik om te sync';
+    document.getElementById('sp-login-knop').style.borderColor='var(--dh-grn)';
+  } else {
+    ico.textContent = '🔓';
+    txt.textContent = 'Aanmelden op SharePoint';
+    document.getElementById('sp-login-knop').style.borderColor='var(--dh-bdr)';
   }
 }
 
