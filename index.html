@@ -682,12 +682,6 @@ var st,ct,ut,lt,dt,ht,pt,gt,ft,mt=function(){function t(e,t,r){this.networkInter
 </script>
 </head>
 <body>
-
-<!-- DEBUG OVERLAY — tijdelijk -->
-<div id="fb-debug" style="position:fixed;bottom:60px;left:0;right:0;background:#1a1a18;border-top:2px solid #c8922a;padding:8px 12px;font-size:11px;color:#f0ece4;z-index:9999;max-height:120px;overflow-y:auto;display:none">
-  <div style="font-weight:700;color:#c8922a;margin-bottom:4px">🔍 Firebase Debug</div>
-  <div id="fb-debug-txt"></div>
-</div>
 <!-- Mobile hamburger knop -->
 <button class="mobile-hamburger" onclick="document.querySelector('.sidebar').classList.toggle('mobile-open')"
   style="display:none;position:fixed;top:10px;left:10px;z-index:300;background:var(--dh-sur2);border:1px solid var(--dh-bdr);border-radius:8px;padding:8px 10px;cursor:pointer;font-size:16px">☰</button>
@@ -837,13 +831,7 @@ var st,ct,ut,lt,dt,ht,pt,gt,ft,mt=function(){function t(e,t,r){this.networkInter
         <span id="sp-status-ico">⏳</span>
         <span id="sp-status-txt">Sync laden...</span>
       </button>
-      <button onclick="fbPushNow()" id="fb-push-knop"
-        style="width:100%;background:var(--dh-sur2);border:1px solid #c8922a55;
-          border-radius:6px;padding:5px 8px;font-size:10px;color:var(--dh-muted);
-          cursor:pointer;display:flex;align-items:center;gap:5px;justify-content:center">
-        <span id="fb-push-ico">🔥</span>
-        <span id="fb-push-txt">Push naar Firebase</span>
-      </button>
+      <button onclick="fbPushNow()" style="width:100%;background:var(--dh-sur2);border:1px solid #c8922a55;border-radius:6px;padding:5px 8px;font-size:10px;color:var(--dh-muted);cursor:pointer;display:flex;align-items:center;gap:5px;justify-content:center"><span>🔥</span><span id="fb-push-txt">Push naar Firebase</span></button>
     </div>
     <div style="text-align:center;padding:2px 0 4px;font-size:9px;color:var(--dh-muted);letter-spacing:.5px">v6 · De Hoorn Loftbeheer</div>
   </div>
@@ -1083,155 +1071,84 @@ var st,ct,ut,lt,dt,ht,pt,gt,ft,mt=function(){function t(e,t,r){this.networkInter
 <div class="twrap" id="twrap"></div>
 
 
-<!-- Firebase compat SDK -->
+<!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script>
-(function(){
-  var cfg = {
-    apiKey:"AIzaSyA-GhcwiYzv2po_n6wuqNRwdQP3sGTedLo",
-    authDomain:"loftbeheer-dehoorn.firebaseapp.com",
-    databaseURL:"https://loftbeheer-dehoorn-default-rtdb.europe-west1.firebasedatabase.app",
-    projectId:"loftbeheer-dehoorn",
-    storageBucket:"loftbeheer-dehoorn.firebasestorage.app",
-    messagingSenderId:"696127801225",
-    appId:"1:696127801225:web:c11c7720a43542abb24358"
-  };
-  firebase.initializeApp(cfg);
-  var _fbDb = firebase.database();
-  window._fbReady = false;
-  window._fbSaveTimeout = null;
-  window._fbPushInProgress = false;
+firebase.initializeApp({
+  apiKey:"AIzaSyA-GhcwiYzv2po_n6wuqNRwdQP3sGTedLo",
+  databaseURL:"https://loftbeheer-dehoorn-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId:"loftbeheer-dehoorn",
+  appId:"1:696127801225:web:c11c7720a43542abb24358"
+});
+var _fbDb = firebase.database();
+window._fbReady = false;
 
-
-  // Firebase staat geen . # $ / [ ] toe in keys — vervang door _dot_ etc.
-  function _fbSanitizeKeys(obj){
-    if(obj===null||obj===undefined) return obj;
-    if(Array.isArray(obj)) return obj.map(_fbSanitizeKeys);
-    if(typeof obj==='object'){
-      var out={};
-      Object.keys(obj).forEach(function(k){
-        var sk=k.replace(/\./g,'_dot_').replace(/#/g,'_hash_').replace(/\$/g,'_dol_').replace(/\//g,'_sl_').replace(/\[/g,'_ob_').replace(/\]/g,'_cb_');
-        out[sk]=_fbSanitizeKeys(obj[k]);
-      });
-      return out;
-    }
-    return obj;
-  }
-  function _fbRestoreKeys(obj){
-    if(obj===null||obj===undefined) return obj;
-    if(Array.isArray(obj)) return obj.map(_fbRestoreKeys);
-    if(typeof obj==='object'){
-      var keys = Object.keys(obj);
-      // Firebase slaat arrays op als object met numerieke keys — converteer terug
-      var isArr = keys.length > 0 && keys.every(function(k){ return /^\d+$/.test(k); });
-      if(isArr){
-        var arr = [];
-        keys.forEach(function(k){ arr[parseInt(k)] = _fbRestoreKeys(obj[k]); });
-        return arr;
+window.fbLoad = async function(){
+  try {
+    var snap = await _fbDb.ref('loftbeheer').get();
+    if(snap.exists()){
+      var data = snap.val();
+      // db herstel
+      if(data.db) window.db = data.db;
+      // bookings: Firebase geeft object terug, zet om naar array
+      if(data.bookings){
+        var bk = data.bookings;
+        if(!Array.isArray(bk)) bk = Object.values(bk);
+        bk = bk.filter(function(x){ return x != null; });
+        if(bk.length) window.bookings = bk;
+        console.log('FB geladen: ' + bk.length + ' bookings');
       }
-      var out={};
-      keys.forEach(function(k){
-        var rk=k.replace(/_dot_/g,'.').replace(/_hash_/g,'#').replace(/_dol_/g,'$').replace(/_sl_/g,'/').replace(/_ob_/g,'[').replace(/_cb_/g,']');
-        out[rk]=_fbRestoreKeys(obj[k]);
-      });
-      return out;
+    } else {
+      // Eerste keer: push lokale data
+      var ld = null; var lb = null;
+      try{ ld = JSON.parse(localStorage.getItem('dh7_LEEG_db')||'null'); }catch(e){}
+      try{ lb = JSON.parse(localStorage.getItem('dh4_LEEG_bookings')||'null'); }catch(e){}
+      await _fbDb.ref('loftbeheer').set({db: ld||{}, bookings: lb||[]});
+      console.log('FB: startpunt geupload');
     }
-    return obj;
-  }
-
-  
-function _fbDebug(msg){
-  var el = document.getElementById('fb-debug');
-  var txt = document.getElementById('fb-debug-txt');
-  if(!el || !txt) return;
-  el.style.display = 'block';
-  txt.innerHTML += '<div>' + new Date().toLocaleTimeString() + ': ' + msg + '</div>';
-  console.log('FB DEBUG:', msg);
-}
-
-  window.fbLoad = async function(){
-    try {
-      _fbDebug('fbLoad gestart...');
-      var snap = await _fbDb.ref('loftbeheer').get();
-      if(snap.exists()){
-        var data = snap.val();
-        if(data.db){ window.db = _fbRestoreKeys(data.db); }
-        // Firebase geeft arrays terug als object {0:{...}, 1:{...}} — altijd via _fbRestoreKeys
-        if(data.bookings){
-          var restored = _fbRestoreKeys(data.bookings);
-          // Zorg dat het een array is
-          if(Array.isArray(restored) && restored.length > 0){
-            window.bookings = restored;
-            console.log('FB bookings geladen:', restored.length); _fbDebug('bookings array: ' + restored.length);
-          } else if(typeof restored === 'object'){
-            // Object met numerieke keys → naar array
-            var arr = Object.values(restored).filter(function(x){ return x && x.loftId; });
-            if(arr.length > 0){
-              window.bookings = arr;
-              console.log('FB bookings (object→array) geladen:', arr.length); _fbDebug('bookings obj→arr: ' + arr.length);
-            }
-          }
-        } else {
-          console.log('Firebase heeft nog geen bookings'); _fbDebug('GEEN bookings in Firebase');
-        }
-      } else {
-        var ld = null; var lb2 = null;
-        try{ ld = JSON.parse(localStorage.getItem('dh7_LEEG_db')||'null'); }catch(e){}
-        try{ lb2 = JSON.parse(localStorage.getItem('dh4_LEEG_bookings')||'null'); }catch(e){}
-        await _fbDb.ref('loftbeheer').set({
-          db: _fbSanitizeKeys(ld || window.db || {}),
-          bookings: _fbSanitizeKeys(Array.isArray(lb2) ? lb2 : [])
-        });
-        console.log('Startpunt naar FB geupload');
+    window._fbReady = true;
+    // Live updates
+    _fbDb.ref('loftbeheer').on('value', function(s){
+      if(!s.exists() || window._fbPushInProgress) return;
+      var d = s.val();
+      if(d.db) window.db = d.db;
+      if(d.bookings){
+        var bk = d.bookings;
+        if(!Array.isArray(bk)) bk = Object.values(bk);
+        bk = bk.filter(function(x){ return x != null; });
+        if(bk.length) window.bookings = bk;
       }
-      window._fbReady = true;
-      _fbDb.ref('loftbeheer').on('value', function(s){
-        if(!s.exists()) return;
-        if(window._fbPushInProgress) return; // negeer updates tijdens push
-        var d = s.val();
-        if(d.db){ window.db = _fbRestoreKeys(d.db); }
-        if(d.bookings){
-          var _rb = _fbRestoreKeys(d.bookings);
-          if(Array.isArray(_rb) && _rb.length > 0){ window.bookings = _rb; }
-          else if(typeof _rb === 'object'){
-            var _arr = Object.values(_rb).filter(function(x){ return x && x.loftId; });
-            if(_arr.length > 0) window.bookings = _arr;
-          }
-        }
-        // Herrender enkel als app actief is (gebruiker is ingelogd)
-        if(window.curProfile && document.getElementById('app') && document.getElementById('app').style.display !== 'none'){
-          try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
-          try{ if(typeof renderP==='function' && window._curPage) renderP(window._curPage); }catch(e){}
-          try{ if(typeof renderAgenda==='function') renderAgenda(); }catch(e){}
-        }
-      });
-      return true;
-    } catch(e){
-      console.warn('FB fbLoad fout:', e.message);
-      window._fbReady = false;
-      return false;
-    }
-  };
+      if(window.curProfile){
+        try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
+        try{ if(typeof renderP==='function' && window._curPage) renderP(window._curPage); }catch(e){}
+      }
+    });
+    return true;
+  } catch(e){
+    console.warn('fbLoad fout:', e.message);
+    return false;
+  }
+};
 
-  window.fbSave = function(){
-    if(!window._fbReady) return;
-    if(window._fbSaveTimeout) clearTimeout(window._fbSaveTimeout);
-    window._fbSaveTimeout = setTimeout(async function(){
-      try{ await _fbDb.ref('loftbeheer/db').set(_fbSanitizeKeys(window.db)); }
-      catch(e){ console.warn('FB save fout:', e.message); }
-    }, 800);
-  };
+window._fbPushInProgress = false;
+window.fbSave = function(){
+  if(!window._fbReady) return;
+  clearTimeout(window._fbSaveTimeout);
+  window._fbSaveTimeout = setTimeout(async function(){
+    try{ await _fbDb.ref('loftbeheer/db').set(window.db); }
+    catch(e){ console.warn('fbSave fout:', e.message); }
+  }, 800);
+};
 
-  window.fbSaveBookings = async function(){
-    if(!window._fbReady) return;
-    try{
-      await _fbDb.ref('loftbeheer/bookings').set(_fbSanitizeKeys(window.bookings));
-      await _fbDb.ref('loftbeheer/db').set(_fbSanitizeKeys(window.db));
-      console.log('FB bookings+db opgeslagen');
-    } catch(e){ console.warn('FB saveBookings fout:', e.message); }
-  };
-})();
+window.fbSaveBookings = async function(){
+  if(!window._fbReady) return;
+  try{
+    await _fbDb.ref('loftbeheer/bookings').set(window.bookings);
+    await _fbDb.ref('loftbeheer/db').set(window.db);
+    console.log('FB bookings+db opgeslagen: ' + window.bookings.length);
+  } catch(e){ console.warn('fbSaveBookings fout:', e.message); }
+};
 </script>
 
 <script id="sp-config">
@@ -2618,10 +2535,8 @@ async function initStep1(){
   try {
     const fbOk = await fbLoad();
     if(fbOk){
+      console.log('Firebase actief');
       try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
-      try{localStorage.setItem('dh7_LEEG_db',JSON.stringify(db));}catch(e){}
-      try{localStorage.setItem('dh4_LEEG_bookings',JSON.stringify(bookings));}catch(e){}
-      load(); loadBookings();
     }
   } catch(e){ console.warn('Firebase startup fout:', e.message); }
   // SP auth — volledig niet-blokkerend
@@ -3593,10 +3508,7 @@ function startApp(){
   const rol = curProfile?.rol || 'eigenaar';
   const defaults={eigenaar:'dashboard',inspecteur:'taken',inspecteur_n1:'inspecties',inspecteur_n2:'inspecties',schoonmaak_n1:'taken',schoonmaak_n2:'taken',tech_n1:'taken',tech_n2:'taken',gast:'checklist'};
   nav(defaults[rol]||'dashboard');
-  // Herrender na korte vertraging zodat Firebase data zeker beschikbaar is
-  setTimeout(function(){
-    try{ if(typeof renderP==='function' && _curPage) renderP(_curPage); }catch(e){}
-  }, 1500);
+  setTimeout(function(){ try{ if(typeof renderP==='function'&&_curPage) renderP(_curPage); }catch(e){} }, 1500);
 }
 
 function toggleSidebar(){
@@ -3819,7 +3731,6 @@ function renderDash(){
 
 // ══ BEZETTING / AGENDA ══
 function renderAgenda(){
-  console.log('renderAgenda aangeroepen, bookings:', bookings.length, 'eerste:', bookings[0]?.loftId, bookings[0]?.checkIn);
   const today=new Date(); today.setHours(0,0,0,0);
   const start=new Date(today); start.setDate(today.getDate()+agendaOffset*14);
   const days=[];
@@ -7487,11 +7398,10 @@ function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2
 function renderPage(){if(curProfile&&typeof nav==='function')nav(_curPage||'dashboard');}
 
 load();loadBookings();_refreshBeddenStock();seedPeriodiek();seedInventaris();
-// Wacht op Firebase compat scripts voor initStep1
 function _waitForFbAndInit(n){
   if(typeof window.fbLoad==='function'){ initStep1(); }
   else if(n<50){ setTimeout(function(){ _waitForFbAndInit(n+1); }, 100); }
-  else{ console.warn('Firebase timeout — start zonder'); initStep1(); }
+  else{ initStep1(); }
 }
 _waitForFbAndInit(0);
 _initTijdBalk();
@@ -8909,13 +8819,6 @@ function _sdImportBevestigen(){
       outTijd: b._bewaardOutTijd,
       inTijd_manueel:  b.inTijd_manueel,
       outTijd_manueel: b.outTijd_manueel,
-      // Bewaar alle manueel ingestelde velden — blijven staan na sync
-      note:              b.note              || null,
-      extras:            b.extras            || null,
-      extraKamer:        b.extraKamer        || null,
-      status:            b.status            || null,
-      eindPoetsTijdVan:  b.eindPoetsTijdVan  || null,
-      eindPoetsTijdTot:  b.eindPoetsTijdTot  || null,
     };
   });
 
@@ -8932,18 +8835,10 @@ function _sdImportBevestigen(){
     const bewaard = bewaardeTijdenMap[p.sdId+'_'+p.loftId] || {};
     const inTijd  = bewaard.inTijd_manueel  ? bewaard.inTijd  : p.inTijd;
     const outTijd = bewaard.outTijd_manueel ? bewaard.outTijd : p.outTijd;
-    const bk = {...p, id:'sd_'+uid(), inTijd, outTijd,
+    bookings.push({...p, id:'sd_'+uid(), inTijd, outTijd,
       inTijd_manueel:  bewaard.inTijd_manueel  || false,
       outTijd_manueel: bewaard.outTijd_manueel || false,
-    };
-    // Herstel manueel ingestelde velden
-    if(bewaard.note)             bk.note             = bewaard.note;
-    if(bewaard.extras)           bk.extras           = bewaard.extras;
-    if(bewaard.extraKamer)       bk.extraKamer       = bewaard.extraKamer;
-    if(bewaard.status)           bk.status           = bewaard.status;
-    if(bewaard.eindPoetsTijdVan) bk.eindPoetsTijdVan = bewaard.eindPoetsTijdVan;
-    if(bewaard.eindPoetsTijdTot) bk.eindPoetsTijdTot = bewaard.eindPoetsTijdTot;
-    bookings.push(bk);
+    });
     nieuw++;
   });
   verwijderd = Math.max(0, verwijderd - nieuw); // netto verwijderd
@@ -9050,35 +8945,22 @@ function _spUpdateKnop(){
 }
 
 
-// Manuele Firebase push — synchroniseert alle data naar Firebase
 async function fbPushNow(){
-  const ico = document.getElementById('fb-push-ico');
-  const txt = document.getElementById('fb-push-txt');
   if(!window._fbReady){ toast('Firebase niet verbonden','err'); return; }
-  if(ico) ico.textContent = '⏳';
-  if(txt) txt.textContent = 'Bezig...';
-  window._fbPushInProgress = true; // blokkeer live-listener
-  try {
-    // Laad rechtstreeks uit localStorage — meest recente versie
-    const localBk = JSON.parse(localStorage.getItem('dh4_LEEG_bookings') || '[]');
-    const localDb = JSON.parse(localStorage.getItem('dh7_LEEG_db') || 'null');
-    if(localBk.length > 0) window.bookings = localBk;
-    if(localDb) window.db = localDb;
-    console.log('Push: ' + window.bookings.length + ' bookings naar Firebase');
+  var txt = document.getElementById('fb-push-txt');
+  if(txt) txt.textContent = '⏳ Bezig...';
+  window._fbPushInProgress = true;
+  try{
+    var lb = null;
+    try{ lb = JSON.parse(localStorage.getItem('dh4_LEEG_bookings')||'null'); }catch(e){}
+    if(lb && lb.length) window.bookings = lb;
     await window.fbSaveBookings();
-    if(ico) ico.textContent = '✅';
-    if(txt) txt.textContent = 'Firebase bijgewerkt (' + window.bookings.length + ')';
-    toast('✅ ' + window.bookings.length + ' bookings naar Firebase gepusht','ok');
-    setTimeout(()=>{
-      window._fbPushInProgress = false; // heractiveer live-listener
-      if(ico) ico.textContent='🔥';
-      if(txt) txt.textContent='Push naar Firebase';
-    }, 3000);
-  } catch(e) {
+    if(txt) txt.textContent = '✅ ' + window.bookings.length + ' gepusht';
+    toast('✅ ' + window.bookings.length + ' bookings naar Firebase','ok');
+    setTimeout(function(){ window._fbPushInProgress=false; if(txt) txt.textContent='🔥 Push naar Firebase'; }, 3000);
+  } catch(e){
     window._fbPushInProgress = false;
-    if(ico) ico.textContent = '❌';
-    if(txt) txt.textContent = 'Push mislukt';
-    toast('Firebase push mislukt: '+e.message,'err');
+    toast('Push mislukt: '+e.message,'err');
   }
 }
 </script>
