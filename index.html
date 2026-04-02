@@ -3737,6 +3737,17 @@ function renderDash(){
 
 // ══ BEZETTING / AGENDA ══
 function renderAgenda(){
+  // Debug: toon sample bookings
+  var dbgEl = document.getElementById('fb-debug-txt');
+  if(dbgEl && bookings.length > 0){
+    var b0 = bookings[0];
+    var info = 'bk[0]: loftId=' + b0.loftId + ' checkIn=' + b0.checkIn + ' checkOut=' + b0.checkOut + ' type=' + typeof b0.loftId;
+    dbgEl.innerHTML += '<div style="color:#8fd48f">' + info + '</div>';
+    document.getElementById('fb-debug').style.display='block';
+  } else if(dbgEl){
+    dbgEl.innerHTML += '<div style="color:#c84040">renderAgenda: bookings LEEG</div>';
+    document.getElementById('fb-debug').style.display='block';
+  }
   const today=new Date(); today.setHours(0,0,0,0);
   const start=new Date(today); start.setDate(today.getDate()+agendaOffset*14);
   const days=[];
