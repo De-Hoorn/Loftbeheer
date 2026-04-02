@@ -1070,11 +1070,11 @@ var st,ct,ut,lt,dt,ht,pt,gt,ft,mt=function(){function t(e,t,r){this.networkInter
 <div class="twrap" id="twrap"></div>
 
 
-<script type="module" id="firebase-init">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, set, get, onValue, off } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-
-const firebaseConfig = {
+<!-- Firebase compat SDK — geen module-issues, werkt op alle browsers/mobiel -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script id="firebase-init">
+const _fbApp = firebase.initializeApp({
   apiKey: "AIzaSyA-GhcwiYzv2po_n6wuqNRwdQP3sGTedLo",
   authDomain: "loftbeheer-dehoorn.firebaseapp.com",
   databaseURL: "https://loftbeheer-dehoorn-default-rtdb.europe-west1.firebasedatabase.app",
@@ -1082,77 +1082,48 @@ const firebaseConfig = {
   storageBucket: "loftbeheer-dehoorn.firebasestorage.app",
   messagingSenderId: "696127801225",
   appId: "1:696127801225:web:c11c7720a43542abb24358"
-};
-
-const _fbApp = initializeApp(firebaseConfig);
-const _fbDatabase = getDatabase(_fbApp);
-
-// Maak functies globaal beschikbaar voor de rest van de app
-window._fbDatabase = _fbDatabase;
-window._fbRef = ref;
-window._fbSet = set;
-window._fbGet = get;
-window._fbOnValue = onValue;
-window._fbOff = off;
+});
+const _fbDb = firebase.database();
 window._fbReady = false;
 window._fbSaveTimeout = null;
 
 window.fbLoad = async function() {
   try {
-    const snapshot = await get(ref(_fbDatabase, 'loftbeheer'));
-
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      // db: taken, team, checklists, etc.
+    const snap = await _fbDb.ref('loftbeheer').get();
+    if (snap.exists()) {
+      const data = snap.val();
       if (data.db) { window.db = data.db; }
-
       if (data.bookings && Array.isArray(data.bookings) && data.bookings.length > 0) {
-        // Firebase heeft bookings → gebruik die
         window.bookings = data.bookings;
         console.log('✅ Firebase bookings geladen:', data.bookings.length);
       } else {
-        // Firebase heeft GEEN bookings → push lokale bookings als startpunt
-        // (dit gebeurt eenmalig bij eerste uitrol)
         const localBk = JSON.parse(localStorage.getItem('dh4_LEEG_bookings') || 'null');
         if (Array.isArray(localBk) && localBk.length > 0) {
-          console.log('ℹ️ Firebase heeft geen bookings — lokale bookings uploaden als startpunt:', localBk.length);
           window.bookings = localBk;
-          await set(ref(_fbDatabase, 'loftbeheer/bookings'), localBk);
-          console.log('✅ Lokale bookings geüpload naar Firebase');
-        } else {
-          console.log('ℹ️ Geen bookings in Firebase of lokaal — wacht op Stardekk import');
+          await _fbDb.ref('loftbeheer/bookings').set(localBk);
+          console.log('✅ Lokale bookings geüpload naar Firebase:', localBk.length);
         }
       }
     } else {
-      // Firebase volledig leeg → push alles als startpunt
-      console.log('ℹ️ Firebase leeg — lokale data uploaden als startpunt');
-      try {
-        const localDb = JSON.parse(localStorage.getItem('dh7_LEEG_db') || 'null');
-        const localBk = JSON.parse(localStorage.getItem('dh4_LEEG_bookings') || 'null');
-        await set(ref(_fbDatabase, 'loftbeheer'), {
-          db:       localDb || window.db || {},
-          bookings: Array.isArray(localBk) ? localBk : []
-        });
-        console.log('✅ Lokale data geüpload naar Firebase als startpunt');
-      } catch(e) { console.warn('Upload startpunt mislukt:', e.message); }
+      const localDb = JSON.parse(localStorage.getItem('dh7_LEEG_db') || 'null');
+      const localBk = JSON.parse(localStorage.getItem('dh4_LEEG_bookings') || 'null');
+      await _fbDb.ref('loftbeheer').set({
+        db: localDb || window.db || {},
+        bookings: Array.isArray(localBk) ? localBk : []
+      });
+      console.log('✅ Lokale data geüpload naar Firebase als startpunt');
     }
-
     window._fbReady = true;
-
-    // Live-sync: wijzigingen van andere gebruikers direct zichtbaar
-    onValue(ref(_fbDatabase, 'loftbeheer'), (snap) => {
+    // Live-sync
+    _fbDb.ref('loftbeheer').on('value', (snap) => {
       if (!snap.exists()) return;
       const data = snap.val();
       if (data.db) { window.db = data.db; }
-      if (data.bookings && Array.isArray(data.bookings)) {
-        window.bookings = data.bookings;
-      }
-      // Herrender actieve pagina
+      if (data.bookings && Array.isArray(data.bookings)) { window.bookings = data.bookings; }
       try { if (typeof renderDash      === 'function') renderDash();      } catch(e){}
       try { if (typeof renderTaken     === 'function') renderTaken();     } catch(e){}
       try { if (typeof renderBezetting === 'function') renderBezetting(); } catch(e){}
     });
-
     return true;
   } catch(e) {
     console.warn('❌ Firebase fbLoad fout:', e.message);
@@ -1166,42 +1137,19 @@ window.fbSave = function() {
   if (window._fbSaveTimeout) clearTimeout(window._fbSaveTimeout);
   window._fbSaveTimeout = setTimeout(async () => {
     try {
-      // Sla enkel db op bij gewone saves (taken, team, etc.)
-      await set(ref(_fbDatabase, 'loftbeheer/db'), window.db);
+      await _fbDb.ref('loftbeheer/db').set(window.db);
       console.log('✅ Firebase db opgeslagen');
-    } catch(e) {
-      console.warn('❌ Firebase fbSave fout:', e.message);
-    }
+    } catch(e) { console.warn('❌ Firebase fbSave fout:', e.message); }
   }, 800);
 };
 
-// Enkel aan te roepen na Stardekk import of manuele boeking
 window.fbSaveBookings = async function() {
   if (!window._fbReady) return;
   try {
-    await set(ref(_fbDatabase, 'loftbeheer/bookings'), window.bookings);
-    await set(ref(_fbDatabase, 'loftbeheer/db'), window.db); // ook taken updaten (nieuwe poestaken)
-    console.log('✅ Firebase bookings + db opgeslagen na Stardekk sync');
-  } catch(e) {
-    console.warn('❌ Firebase fbSaveBookings fout:', e.message);
-  }
-};
-
-window.fbSave = function() {
-  if (!window._fbReady) return;
-  if (window._fbSaveTimeout) clearTimeout(window._fbSaveTimeout);
-  window._fbSaveTimeout = setTimeout(async () => {
-    try {
-      await set(ref(_fbDatabase, 'loftbeheer'), {
-        db:       window.db,
-        bookings: window.bookings,
-        _lastSaved: new Date().toISOString()
-      });
-      console.log('✅ Firebase opgeslagen');
-    } catch(e) {
-      console.warn('❌ Firebase fbSave fout:', e.message);
-    }
-  }, 800); // 800ms debounce — voorkomt te veel writes
+    await _fbDb.ref('loftbeheer/bookings').set(window.bookings);
+    await _fbDb.ref('loftbeheer/db').set(window.db);
+    console.log('✅ Firebase bookings + db opgeslagen');
+  } catch(e) { console.warn('❌ Firebase fbSaveBookings fout:', e.message); }
 };
 </script>
 
@@ -2860,7 +2808,7 @@ function openInstructieblad(){
     <span>Afgedrukt op ${new Date().toLocaleDateString('nl-BE')}</span>
   </div>
 
-  <script>window.onload=()=>window.print();<\/script>
+  <script>window.onload=()=>window.print();</script>
   <!-- Mobile bottom nav (enkel voor team rollen, niet eigenaar) -->
 <nav class="mobile-nav" id="mobileNav">
 </nav>
