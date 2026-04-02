@@ -3070,6 +3070,7 @@ function updatePinDots(){
 }
 
 function doLogin(pid, rolOverride){
+  alert('doLogin: '+pid+' bk='+bookings.length+' fbKlaar='+window._fbBookingsKlaar);
   curProfile = getProfielById(pid);
   if(!curProfile) return;
   const rol = rolOverride || _pendingRol || curProfile.rol;
