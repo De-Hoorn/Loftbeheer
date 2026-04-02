@@ -1070,6 +1070,85 @@ var st,ct,ut,lt,dt,ht,pt,gt,ft,mt=function(){function t(e,t,r){this.networkInter
 <div class="twrap" id="twrap"></div>
 
 
+<script type="module" id="firebase-init">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, set, get, onValue, off } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyA-GhcwiYzv2po_n6wuqNRwdQP3sGTedLo",
+  authDomain: "loftbeheer-dehoorn.firebaseapp.com",
+  databaseURL: "https://loftbeheer-dehoorn-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "loftbeheer-dehoorn",
+  storageBucket: "loftbeheer-dehoorn.firebasestorage.app",
+  messagingSenderId: "696127801225",
+  appId: "1:696127801225:web:c11c7720a43542abb24358"
+};
+
+const _fbApp = initializeApp(firebaseConfig);
+const _fbDatabase = getDatabase(_fbApp);
+
+// Maak functies globaal beschikbaar voor de rest van de app
+window._fbDatabase = _fbDatabase;
+window._fbRef = ref;
+window._fbSet = set;
+window._fbGet = get;
+window._fbOnValue = onValue;
+window._fbOff = off;
+window._fbReady = false;
+window._fbSaveTimeout = null;
+
+window.fbLoad = async function() {
+  try {
+    const dbRef = ref(_fbDatabase, 'loftbeheer');
+    const snapshot = await get(dbRef);
+    if (snapshot.exists()) {
+      const data = snapshot.val();
+      if (data.db)       { window.db       = data.db;                              }
+      if (data.bookings) { window.bookings  = Array.isArray(data.bookings) ? data.bookings : []; }
+      console.log('✅ Firebase data geladen');
+    } else {
+      console.log('ℹ️ Firebase: geen data gevonden, start leeg');
+    }
+    window._fbReady = true;
+
+    // Live updates: andere gebruikers zien wijzigingen direct
+    onValue(ref(_fbDatabase, 'loftbeheer'), (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.val();
+      if (data.db)       { window.db       = data.db; }
+      if (data.bookings) { window.bookings  = Array.isArray(data.bookings) ? data.bookings : []; }
+      // Herrender huidige pagina als app al actief is
+      if (typeof renderDash === 'function') {
+        try { renderDash(); } catch(e) {}
+      }
+    }, { onlyOnce: false });
+
+    return true;
+  } catch(e) {
+    console.warn('❌ Firebase fbLoad fout:', e.message);
+    window._fbReady = false;
+    return false;
+  }
+};
+
+window.fbSave = function() {
+  if (!window._fbReady) return;
+  if (window._fbSaveTimeout) clearTimeout(window._fbSaveTimeout);
+  window._fbSaveTimeout = setTimeout(async () => {
+    try {
+      await set(ref(_fbDatabase, 'loftbeheer'), {
+        db:       window.db,
+        bookings: window.bookings,
+        _lastSaved: new Date().toISOString()
+      });
+      console.log('✅ Firebase opgeslagen');
+    } catch(e) {
+      console.warn('❌ Firebase fbSave fout:', e.message);
+    }
+  }, 800); // 800ms debounce — voorkomt te veel writes
+};
+</script>
+
 <script id="sp-config">
 const SP_CONFIG={clientId:'9e11f296-d84a-487e-8225-6cf5109402d2',tenantId:'b2c16f77-0c93-49cd-83e1-d694b30d4b81',driveId:'b!RVDjVAgIRUuRSWg1tcEBLEQD4kHFu99DpmmpYPwIaRhSrFbWCzIERLkn8s4idee1',folderId:'01LXBVUAUKAQRVBU5DSNAKSZ3RGV26AIAX',dbFile:'db.json',bkFile:'bookings.json'};
 const SP_SCOPES=['https://graph.microsoft.com/Files.ReadWrite','https://graph.microsoft.com/User.Read','offline_access'];
@@ -1380,7 +1459,8 @@ let db = {taken:[], periodiek:[], history:[], clState:{}, inspectie_states:{}, u
 function save(){
   try{localStorage.setItem('dh7_LEEG_db',JSON.stringify(db));}catch(e){}
   try{localStorage.setItem('dh4_LEEG_bookings',JSON.stringify(bookings));}catch(e){}
-  if(typeof _fbReady!=='undefined'&&_fbReady) fbSave();
+  if(typeof window._fbReady!=='undefined' && window._fbReady && typeof window.fbSave==='function') window.fbSave();
+  if(typeof _spReady!=='undefined' && _spReady) spSave();
 }
 function load(){
   const s=localStorage.getItem('dh7_LEEG_db');
