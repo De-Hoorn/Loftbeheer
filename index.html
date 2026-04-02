@@ -1089,21 +1089,50 @@ var st,ct,ut,lt,dt,ht,pt,gt,ft,mt=function(){function t(e,t,r){this.networkInter
   window._fbReady = false;
   window._fbSaveTimeout = null;
 
+
+  // Firebase staat geen . # $ / [ ] toe in keys — vervang door _dot_ etc.
+  function _fbSanitizeKeys(obj){
+    if(obj===null||obj===undefined) return obj;
+    if(Array.isArray(obj)) return obj.map(_fbSanitizeKeys);
+    if(typeof obj==='object'){
+      var out={};
+      Object.keys(obj).forEach(function(k){
+        var sk=k.replace(/\./g,'_dot_').replace(/#/g,'_hash_').replace(/\$/g,'_dol_').replace(/\//g,'_sl_').replace(/\[/g,'_ob_').replace(/\]/g,'_cb_');
+        out[sk]=_fbSanitizeKeys(obj[k]);
+      });
+      return out;
+    }
+    return obj;
+  }
+  function _fbRestoreKeys(obj){
+    if(obj===null||obj===undefined) return obj;
+    if(Array.isArray(obj)) return obj.map(_fbRestoreKeys);
+    if(typeof obj==='object'){
+      var out={};
+      Object.keys(obj).forEach(function(k){
+        var rk=k.replace(/_dot_/g,'.').replace(/_hash_/g,'#').replace(/_dol_/g,'$').replace(/_sl_/g,'/').replace(/_ob_/g,'[').replace(/_cb_/g,']');
+        out[rk]=_fbRestoreKeys(obj[k]);
+      });
+      return out;
+    }
+    return obj;
+  }
+
   window.fbLoad = async function(){
     try {
       var snap = await _fbDb.ref('loftbeheer').get();
       if(snap.exists()){
         var data = snap.val();
-        if(data.db){ window.db = data.db; }
+        if(data.db){ window.db = _fbRestoreKeys(data.db); }
         if(data.bookings && Array.isArray(data.bookings) && data.bookings.length > 0){
-          window.bookings = data.bookings;
+          window.bookings = _fbRestoreKeys(data.bookings);
           console.log('FB bookings geladen:', data.bookings.length);
         } else {
           var lb = null;
           try{ lb = JSON.parse(localStorage.getItem('dh4_LEEG_bookings')||'null'); }catch(e){}
           if(Array.isArray(lb) && lb.length > 0){
             window.bookings = lb;
-            await _fbDb.ref('loftbeheer/bookings').set(lb);
+            await _fbDb.ref('loftbeheer/bookings').set(_fbSanitizeKeys(lb));
             console.log('Lokale bookings naar FB:', lb.length);
           }
         }
@@ -1112,8 +1141,8 @@ var st,ct,ut,lt,dt,ht,pt,gt,ft,mt=function(){function t(e,t,r){this.networkInter
         try{ ld = JSON.parse(localStorage.getItem('dh7_LEEG_db')||'null'); }catch(e){}
         try{ lb2 = JSON.parse(localStorage.getItem('dh4_LEEG_bookings')||'null'); }catch(e){}
         await _fbDb.ref('loftbeheer').set({
-          db: ld || window.db || {},
-          bookings: Array.isArray(lb2) ? lb2 : []
+          db: _fbSanitizeKeys(ld || window.db || {}),
+          bookings: _fbSanitizeKeys(Array.isArray(lb2) ? lb2 : [])
         });
         console.log('Startpunt naar FB geupload');
       }
@@ -1121,8 +1150,8 @@ var st,ct,ut,lt,dt,ht,pt,gt,ft,mt=function(){function t(e,t,r){this.networkInter
       _fbDb.ref('loftbeheer').on('value', function(s){
         if(!s.exists()) return;
         var d = s.val();
-        if(d.db){ window.db = d.db; }
-        if(d.bookings && Array.isArray(d.bookings)){ window.bookings = d.bookings; }
+        if(d.db){ window.db = _fbRestoreKeys(d.db); }
+        if(d.bookings && Array.isArray(d.bookings)){ window.bookings = _fbRestoreKeys(d.bookings); }
         try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
         try{ if(typeof renderTaken==='function') renderTaken(); }catch(e){}
         try{ if(typeof renderBezetting==='function') renderBezetting(); }catch(e){}
@@ -1139,7 +1168,7 @@ var st,ct,ut,lt,dt,ht,pt,gt,ft,mt=function(){function t(e,t,r){this.networkInter
     if(!window._fbReady) return;
     if(window._fbSaveTimeout) clearTimeout(window._fbSaveTimeout);
     window._fbSaveTimeout = setTimeout(async function(){
-      try{ await _fbDb.ref('loftbeheer/db').set(window.db); }
+      try{ await _fbDb.ref('loftbeheer/db').set(_fbSanitizeKeys(window.db)); }
       catch(e){ console.warn('FB save fout:', e.message); }
     }, 800);
   };
@@ -1147,8 +1176,8 @@ var st,ct,ut,lt,dt,ht,pt,gt,ft,mt=function(){function t(e,t,r){this.networkInter
   window.fbSaveBookings = async function(){
     if(!window._fbReady) return;
     try{
-      await _fbDb.ref('loftbeheer/bookings').set(window.bookings);
-      await _fbDb.ref('loftbeheer/db').set(window.db);
+      await _fbDb.ref('loftbeheer/bookings').set(_fbSanitizeKeys(window.bookings));
+      await _fbDb.ref('loftbeheer/db').set(_fbSanitizeKeys(window.db));
       console.log('FB bookings+db opgeslagen');
     } catch(e){ console.warn('FB saveBookings fout:', e.message); }
   };
