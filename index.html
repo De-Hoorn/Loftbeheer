@@ -1106,27 +1106,44 @@ var _fbPushInProgress = false;
 var _fbBookingsKlaar = false;
 
 function _fbInit(){
-  if(typeof firebase === 'undefined'){
-    console.warn('Firebase SDK nog niet geladen, retry over 200ms');
-    setTimeout(_fbInit, 200);
+  function _doInit(){
+    try {
+      if(!firebase.apps.length){
+        firebase.initializeApp({
+          apiKey:"AIzaSyA-GhcwiYzv2po_n6wuqNRwdQP3sGTedLo",
+          databaseURL:"https://loftbeheer-dehoorn-default-rtdb.europe-west1.firebasedatabase.app",
+          projectId:"loftbeheer-dehoorn",
+          appId:"1:696127801225:web:c11c7720a43542abb24358"
+        });
+      }
+      _fbDb = firebase.database();
+      console.log('Firebase geïnitialiseerd');
+    } catch(e){ console.warn('Firebase init fout:', e.message); }
+  }
+  if(typeof firebase !== 'undefined'){
+    _doInit();
     return;
   }
-  try {
-    if(!firebase.apps.length){
-      firebase.initializeApp({
-        apiKey:"AIzaSyA-GhcwiYzv2po_n6wuqNRwdQP3sGTedLo",
-        databaseURL:"https://loftbeheer-dehoorn-default-rtdb.europe-west1.firebasedatabase.app",
-        projectId:"loftbeheer-dehoorn",
-        appId:"1:696127801225:web:c11c7720a43542abb24358"
-      });
-    }
-    _fbDb = firebase.database();
-    console.log('Firebase geïnitialiseerd');
-  } catch(e){ console.warn('Firebase init fout:', e.message); }
+  // SDK nog niet geladen — laad dynamisch
+  var s1 = document.createElement('script');
+  s1.src = 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js';
+  s1.onload = function(){
+    var s2 = document.createElement('script');
+    s2.src = 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js';
+    s2.onload = _doInit;
+    document.head.appendChild(s2);
+  };
+  document.head.appendChild(s1);
 }
 
 async function fbLoad(){
-  if(!_fbDb){ console.warn('fbLoad: Firebase niet geïnitialiseerd'); return false; }
+  // Wacht tot _fbDb beschikbaar is (dynamisch laden duurt even)
+  var _waited = 0;
+  while(!_fbDb && _waited < 50){
+    await new Promise(function(r){ setTimeout(r, 100); });
+    _waited++;
+  }
+  if(!_fbDb){ console.warn('fbLoad: Firebase niet beschikbaar na wachten'); return false; }
   try {
     var snap = await _fbDb.ref('loftbeheer').get();
     if(snap.exists()){
