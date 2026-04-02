@@ -1261,9 +1261,15 @@ function fbSave(){
   _fbSaveTimeout = setTimeout(async function(){
     _fbPushInProgress = true;
     try{
-      await _fbDb.ref('loftbeheer/db').set(db);
-      console.log('FB db opgeslagen');
-    } catch(e){ console.warn('fbSave fout:', e.message); }
+      // Maak een kopie van db met gefixte arrays
+      var dbClean = JSON.parse(JSON.stringify(db));
+      if(dbClean.taken) dbClean.taken = dbClean.taken.map(function(t){
+        if(t && t.loften && !Array.isArray(t.loften)) t.loften = Object.values(t.loften).filter(function(x){return x!=null;});
+        return t;
+      });
+      await _fbDb.ref('loftbeheer/db').set(dbClean);
+      console.log('FB db opgeslagen, taken:', (dbClean.taken||[]).length);
+    } catch(e){ console.warn('fbSave fout:', e.message, e); }
     setTimeout(function(){ _fbPushInProgress = false; }, 1000);
   }, 800);
 }
@@ -1271,12 +1277,20 @@ function fbSave(){
 async function fbSaveBookings(){
   if(!_fbReady || !_fbDb) return;
   try{
-    // Enkel bookings schrijven — db apart via fbSave() zodat teamleden etc. bewaard blijven
     await _fbDb.ref('loftbeheer/bookings').set(bookings);
-    // db taken (poestaken) ook updaten maar via merge — niet volledig overschrijven
-    await _fbDb.ref('loftbeheer/db/taken').set(db.taken || []);
-    console.log('FB bookings + taken opgeslagen: ' + bookings.length);
-  } catch(e){ console.warn('fbSaveBookings fout:', e.message); }
+    // Sanitize taken keys voor Firebase (geen punten toegelaten)
+    var takenClean = (db.taken||[]).map(function(t){
+      var tc = Object.assign({}, t);
+      // loftId met punt → vervang door underscore voor Firebase key veiligheid
+      // (maar bewaar originele waarde in het object)
+      if(tc.loften && typeof tc.loften === 'object' && !Array.isArray(tc.loften)){
+        tc.loften = Object.values(tc.loften).filter(function(x){return x!=null;});
+      }
+      return tc;
+    });
+    await _fbDb.ref('loftbeheer/db/taken').set(takenClean);
+    console.log('FB bookings + taken opgeslagen:', bookings.length, 'bk,', takenClean.length, 'taken');
+  } catch(e){ console.warn('fbSaveBookings fout:', e.message, e); }
 }
 
 async function fbPushNow(){
@@ -1285,10 +1299,14 @@ async function fbPushNow(){
   if(txt) txt.textContent = '⏳ Bezig...';
   _fbPushInProgress = true;
   try{
-    var lb = null;
+    var lb = null; var ld = null;
     try{ lb = JSON.parse(localStorage.getItem('dh4_LEEG_bookings')||'null'); }catch(e){}
+    try{ ld = JSON.parse(localStorage.getItem('dh7_LEEG_db')||'null'); }catch(e){}
     if(lb && lb.length) bookings = lb;
+    if(ld){ db = ld; }
     await fbSaveBookings();
+    // Push ook volledige db (team, taken, etc.)
+    await fbSave();
     if(txt) txt.textContent = '✅ ' + bookings.length + ' gepusht';
     toast('✅ ' + bookings.length + ' bookings naar Firebase','ok');
     setTimeout(function(){ _fbPushInProgress=false; if(txt) txt.textContent='🔥 Push naar Firebase'; }, 3000);
