@@ -3759,9 +3759,19 @@ function renderP(p){
   }
   if(p==='loften')    renderLofts();
   if(p==='tickets')   renderTickets();
-  if(p==='taken')     renderTaken();
+  if(p==='taken'){
+    try{ renderTaken(); }
+    catch(e){
+      console.error('renderTaken fout:', e);
+      const el=document.getElementById('takenList');
+      if(el) el.innerHTML='<div class="empty"><div class="empty-i">⚠️</div><div class="empty-t">Fout bij laden taken</div><div class="empty-s">'+e.message+'</div></div>';
+    }
+  }
   if(p==='inspecties')renderInspecties();
-  if(p==='checklist') renderChecklist();
+  if(p==='checklist'){
+    try{ renderChecklist(); }
+    catch(e){ console.error('renderChecklist fout:', e); }
+  }
   if(p==='beheer'){
     try{ renderBeheer(); }
     catch(e){ 
