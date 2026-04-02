@@ -1095,6 +1095,7 @@ var st,ct,ut,lt,dt,ht,pt,gt,ft,mt=function(){function t(e,t,r){this.networkInter
   var _fbDb = firebase.database();
   window._fbReady = false;
   window._fbSaveTimeout = null;
+  window._fbPushInProgress = false;
 
 
   // Firebase staat geen . # $ / [ ] toe in keys — vervang door _dot_ etc.
@@ -1153,6 +1154,7 @@ var st,ct,ut,lt,dt,ht,pt,gt,ft,mt=function(){function t(e,t,r){this.networkInter
       window._fbReady = true;
       _fbDb.ref('loftbeheer').on('value', function(s){
         if(!s.exists()) return;
+        if(window._fbPushInProgress) return; // negeer updates tijdens push
         var d = s.val();
         if(d.db){ window.db = _fbRestoreKeys(d.db); }
         if(d.bookings && Array.isArray(d.bookings)){ window.bookings = _fbRestoreKeys(d.bookings); }
@@ -9006,20 +9008,25 @@ async function fbPushNow(){
   if(!window._fbReady){ toast('Firebase niet verbonden','err'); return; }
   if(ico) ico.textContent = '⏳';
   if(txt) txt.textContent = 'Bezig...';
+  window._fbPushInProgress = true; // blokkeer live-listener
   try {
-    // Gebruik altijd de lokale localStorage als bron — dit is de meest recente versie
-    // (Firebase kan verouderd zijn als er lokaal al een import gedaan werd)
+    // Laad rechtstreeks uit localStorage — meest recente versie
     const localBk = JSON.parse(localStorage.getItem('dh4_LEEG_bookings') || '[]');
     const localDb = JSON.parse(localStorage.getItem('dh7_LEEG_db') || 'null');
     if(localBk.length > 0) window.bookings = localBk;
     if(localDb) window.db = localDb;
-    toast('📤 ' + window.bookings.length + ' bookings naar Firebase...', 'ok');
+    console.log('Push: ' + window.bookings.length + ' bookings naar Firebase');
     await window.fbSaveBookings();
     if(ico) ico.textContent = '✅';
     if(txt) txt.textContent = 'Firebase bijgewerkt (' + window.bookings.length + ')';
     toast('✅ ' + window.bookings.length + ' bookings naar Firebase gepusht','ok');
-    setTimeout(()=>{ if(ico) ico.textContent='🔥'; if(txt) txt.textContent='Push naar Firebase'; }, 4000);
+    setTimeout(()=>{
+      window._fbPushInProgress = false; // heractiveer live-listener
+      if(ico) ico.textContent='🔥';
+      if(txt) txt.textContent='Push naar Firebase';
+    }, 3000);
   } catch(e) {
+    window._fbPushInProgress = false;
     if(ico) ico.textContent = '❌';
     if(txt) txt.textContent = 'Push mislukt';
     toast('Firebase push mislukt: '+e.message,'err');
