@@ -7706,18 +7706,26 @@ function renderSchoonmaakTaken(el, niveaus){
           </div>
         </div>`;
       } else {
-        // Systeemtaak (fallback — geen taak in db.taken)
+        // Systeemtaak — klikbaar via data-attributen (geen quote-problemen)
         const co = t.checkOut;
         const diffD = Math.round((new Date(co)-today)/86400000);
-        const kleur = diffD<0?'var(--dh-red)':diffD===0?'var(--dh-red)':diffD<=1?'var(--dh-ora)':'var(--dh-sur3)';
+        const isToekomst = diffD > 7;
+        const kleur = diffD<0?'var(--dh-red)':diffD===0?'var(--dh-red)':diffD<=1?'var(--dh-ora)':diffD<=7?'var(--dh-blue)':'var(--dh-sur3)';
         const datStr = diffD<0?'Te laat':diffD===0?'Vandaag':diffD===1?'Morgen':fmtDate(co,true);
-        html += '<div style="background:var(--dh-sur);border:1.5px solid '+kleur+'33;border-left:4px solid '+kleur+';border-radius:10px;padding:14px 16px;margin-bottom:10px;opacity:.7">'
-          +'<div style="display:flex;align-items:center;gap:14px">'
-          +'<div style="font-family:var(--disp);font-size:28px;font-weight:800;color:'+kleur+';width:52px;text-align:center;flex-shrink:0">'+t.loftId+'</div>'
-          +'<div style="flex:1"><div style="font-family:var(--disp);font-size:14px;font-weight:700;color:var(--dh-cream)">Eindpoets</div>'
-          +'<div style="font-size:10px;color:var(--dh-muted)">'+t.bkNaam+' · checkout '+fmtDate(co)+'</div></div>'
-          +'<div style="font-size:11px;font-weight:800;padding:4px 12px;border-radius:20px;background:'+kleur+';color:#fff">'+datStr+'</div>'
-          +'</div></div>';
+        html += '<div class="systeem-poets-kaart" '
+          + (isToekomst ? '' : 'data-loft="'+t.loftId+'" data-co="'+co+'" data-naam="'+((t.bkNaam||'').replace(/"/g,''))+'" ')
+          + 'style="background:var(--dh-sur);border:1.5px solid '+kleur+'33;border-left:4px solid '+kleur+';border-radius:10px;padding:14px 16px;margin-bottom:10px;cursor:'+(isToekomst?'default':'pointer')+';opacity:'+(isToekomst?'.6':'1')+'">'
+          + '<div style="display:flex;align-items:center;gap:14px">'
+          + '<div style="font-family:var(--disp);font-size:28px;font-weight:800;color:'+kleur+';width:52px;text-align:center;flex-shrink:0">'+t.loftId+'</div>'
+          + '<div style="flex:1">'
+          + '<div style="font-family:var(--disp);font-size:14px;font-weight:700;color:var(--dh-cream)">Eindpoets</div>'
+          + '<div style="font-size:10px;color:var(--dh-muted)">'+t.bkNaam+' · checkout '+fmtDate(co)+'</div>'
+          + '</div>'
+          + '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">'
+          + '<div style="font-size:11px;font-weight:800;padding:4px 12px;border-radius:20px;background:'+kleur+';color:#fff">'+datStr+'</div>'
+          + (isToekomst ? '' : '<button class="gedaan-btn" data-loft="'+t.loftId+'" data-co="'+co+'" style="background:var(--dh-grn-l);border:1.5px solid var(--dh-grn);border-radius:8px;padding:6px 14px;color:var(--dh-grn);font-size:11px;font-weight:700;cursor:pointer;min-height:36px">✓ Gedaan</button>')
+          + '</div>'
+          + '</div></div>';
       }
     });
   }
@@ -7754,6 +7762,13 @@ function renderSchoonmaakTaken(el, niveaus){
 
   if(!html) html = '<div class="empty"><div class="empty-i">✅</div><div class="empty-t">Geen taken — alles bijgewerkt</div></div>';
   el.innerHTML = html;
+  // Event delegation systeemtaken
+  el.querySelectorAll('.systeem-poets-kaart').forEach(function(div){
+    div.addEventListener('click', function(){ var l=div.dataset.loft,c=div.dataset.co,n=div.dataset.naam; if(l&&c) openSysteemPoets(l,c,n); });
+  });
+  el.querySelectorAll('.gedaan-btn').forEach(function(btn){
+    btn.addEventListener('click', function(e){ e.stopPropagation(); markSysteemPoetsKlaar(btn.dataset.loft,btn.dataset.co); });
+  });
 }
 
 function openPoetsDetail(taakId){
@@ -9138,6 +9153,34 @@ function _spUpdateKnop(){
   }
 }
 
+
+function markSysteemPoetsKlaar(loftId, checkOut){
+  if(!db.clState) db.clState = {};
+  const stKey = 'poets_'+loftId+'_'+checkOut;
+  db.clState[stKey] = {klaar:true, door:curProfile?.name||'?', op:nowStr()};
+  save();
+  renderTaken();
+  toast('✅ Eindpoets loft '+loftId+' afgewerkt','ok');
+}
+
+function _systeemPoetsKlik(el){
+  var loftId = el.dataset.loft;
+  var co = el.dataset.co;
+  var naam = el.dataset.naam;
+  document.getElementById('mTtitle').textContent = '🧹 Eindpoets — Loft ' + loftId;
+  document.querySelector('#mT .mb').innerHTML = '<div style="padding:12px 0">'
+    + '<div style="font-size:13px;color:var(--dh-muted);margin-bottom:16px">' + naam + ' &middot; checkout ' + fmtDate(co) + '</div>'
+    + '<div style="background:var(--dh-sur2);border-radius:8px;padding:12px 16px;font-size:12px;color:var(--dh-cream)">Controleer of de loft volledig proper is voor de volgende gast.</div>'
+    + '</div>';
+  var btnHtml = '<button class="btn btn-ghost" onclick="closeM('mT')">Sluiten</button>'
+    + '<button class="btn btn-gold" id="spKlaarBtn">&#10003; Gedaan</button>';
+  document.querySelector('#mT .mf').innerHTML = btnHtml;
+  document.getElementById('spKlaarBtn').onclick = function(){
+    markSysteemPoetsKlaar(loftId, co);
+    closeM('mT');
+  };
+  openM('mT');
+}
 </script>
 
 <!-- PRINT PLANNING MODAL -->
