@@ -7571,6 +7571,8 @@ setTimeout(function(){
 },0);
 
 function renderSchoonmaakTaken(el, niveaus){
+  console.log('renderSchoonmaakTaken: db.taken=', db.taken.length, 'type=', typeof db.taken, 'isArray=', Array.isArray(db.taken));
+  if(db.taken.length > 0) console.log('eerste taak:', JSON.stringify(db.taken[0]).slice(0,200));
   const todayStr = nowStr();
   const today = nowDay();
   const isN2 = niveaus.includes('schoonmaak_n2') || curRole==='schoonmaak_n2';
