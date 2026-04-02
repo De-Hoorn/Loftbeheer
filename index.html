@@ -1118,6 +1118,7 @@ var _fbReady = false;
 var _fbSaveTimeout = null;
 var _fbPushInProgress = false;
 var _fbBookingsKlaar = false;
+var _fbDbKlaar = false;
 
 function _fbInit(){
   function _doInit(){
@@ -1182,6 +1183,7 @@ async function fbLoad(){
       db.poetsConfig      = _fbObjFix(db.poetsConfig);
       db.customChecklists = _fbObjFix(db.customChecklists);
       db.loftConfig       = _fbObjFix(db.loftConfig);
+      _fbDbKlaar = true;
       console.log('FB db geladen, taken:', db.taken.length, 'team:', db.team.length);
     } else {
       // Eerste keer: push lokale db
@@ -3633,11 +3635,13 @@ function startApp(){
   const defaults={eigenaar:'dashboard',inspecteur:'taken',inspecteur_n1:'inspecties',inspecteur_n2:'inspecties',schoonmaak_n1:'taken',schoonmaak_n2:'taken',tech_n1:'taken',tech_n2:'taken',gast:'checklist'};
   const startPagina = defaults[rol]||'dashboard';
   function _doNav(){ nav(startPagina); }
-  if(_fbBookingsKlaar || bookings.length > 0 || !_fbDb){
+  var _fbKlaar = (_fbBookingsKlaar || bookings.length > 0) && (_fbDbKlaar || !_fbDb);
+  if(_fbKlaar){
     _doNav();
   } else {
     var _w = setInterval(function(){
-      if(_fbBookingsKlaar || bookings.length > 0){ clearInterval(_w); _doNav(); }
+      var klaar = (_fbBookingsKlaar || bookings.length > 0) && (_fbDbKlaar || !_fbDb);
+      if(klaar){ clearInterval(_w); _doNav(); }
     }, 100);
     setTimeout(function(){ clearInterval(_w); _doNav(); }, 5000);
   }
@@ -7571,8 +7575,12 @@ setTimeout(function(){
 },0);
 
 function renderSchoonmaakTaken(el, niveaus){
-  console.log('renderSchoonmaakTaken: db.taken=', db.taken.length, 'type=', typeof db.taken, 'isArray=', Array.isArray(db.taken));
-  if(db.taken.length > 0) console.log('eerste taak:', JSON.stringify(db.taken[0]).slice(0,200));
+  // Wacht op Firebase bookings als die nog niet geladen zijn
+  if(!_fbBookingsKlaar && bookings.length === 0){
+    el.innerHTML = '<div class="empty"><div class="empty-i">⏳</div><div class="empty-t">Data laden...</div></div>';
+    setTimeout(function(){ if(typeof renderTaken==='function') renderTaken(); }, 500);
+    return;
+  }
   const todayStr = nowStr();
   const today = nowDay();
   const isN2 = niveaus.includes('schoonmaak_n2') || curRole==='schoonmaak_n2';
