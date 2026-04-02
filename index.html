@@ -2449,13 +2449,15 @@ function getProfielById(pid){
 function loginProfile(pid){ doLogin(pid); } // legacy compat
 
 async function initStep1(){
-  // Firebase laden bij startup (geen login nodig)
-  const fbOk = await fbLoad();
-  if(fbOk){
-    try{localStorage.setItem('dh7_LEEG_db',JSON.stringify(db));}catch(e){}
-    try{localStorage.setItem('dh4_LEEG_bookings',JSON.stringify(bookings));}catch(e){}
-    load(); loadBookings();
-  }
+  // Firebase laden bij startup — altijd in try/catch zodat app nooit blokkeert
+  try {
+    const fbOk = await fbLoad();
+    if(fbOk){
+      try{localStorage.setItem('dh7_LEEG_db',JSON.stringify(db));}catch(e){}
+      try{localStorage.setItem('dh4_LEEG_bookings',JSON.stringify(bookings));}catch(e){}
+      load(); loadBookings();
+    }
+  } catch(e){ console.warn('Firebase startup fout:', e.message); }
   // SP auth — volledig niet-blokkerend
   // App start altijd op, SP verbinding is optioneel
   try {
