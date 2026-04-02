@@ -1099,35 +1099,79 @@ window._fbSaveTimeout = null;
 
 window.fbLoad = async function() {
   try {
-    const dbRef = ref(_fbDatabase, 'loftbeheer');
-    const snapshot = await get(dbRef);
+    const snapshot = await get(ref(_fbDatabase, 'loftbeheer'));
+
     if (snapshot.exists()) {
       const data = snapshot.val();
-      if (data.db)       { window.db       = data.db;                              }
-      if (data.bookings) { window.bookings  = Array.isArray(data.bookings) ? data.bookings : []; }
-      console.log('✅ Firebase data geladen');
+      // db: taken, team, checklists, inspecties, etc.
+      if (data.db) { window.db = data.db; }
+      // bookings: enkel geschreven door Stardekk sync — hier alleen lezen
+      if (data.bookings && Array.isArray(data.bookings) && data.bookings.length > 0) {
+        window.bookings = data.bookings;
+        console.log('✅ Firebase bookings geladen:', data.bookings.length);
+      }
+      console.log('✅ Firebase db geladen');
     } else {
-      console.log('ℹ️ Firebase: geen data gevonden, start leeg');
+      // Firebase is leeg → push lokale data als startpunt
+      console.log('ℹ️ Firebase leeg — lokale data uploaden als startpunt');
+      try {
+        const localDb = JSON.parse(localStorage.getItem('dh7_LEEG_db') || 'null');
+        const localBk = JSON.parse(localStorage.getItem('dh4_LEEG_bookings') || 'null');
+        await set(ref(_fbDatabase, 'loftbeheer'), {
+          db:       localDb || window.db || {},
+          bookings: Array.isArray(localBk) ? localBk : []
+        });
+        console.log('✅ Lokale data geüpload naar Firebase als startpunt');
+      } catch(e) { console.warn('Upload startpunt mislukt:', e.message); }
     }
+
     window._fbReady = true;
 
-    // Live updates: andere gebruikers zien wijzigingen direct
+    // Live-sync: wijzigingen van andere gebruikers direct zichtbaar
     onValue(ref(_fbDatabase, 'loftbeheer'), (snap) => {
       if (!snap.exists()) return;
       const data = snap.val();
       if (data.db)       { window.db       = data.db; }
-      if (data.bookings) { window.bookings  = Array.isArray(data.bookings) ? data.bookings : []; }
-      // Herrender huidige pagina als app al actief is
-      if (typeof renderDash === 'function') {
-        try { renderDash(); } catch(e) {}
+      if (data.bookings && Array.isArray(data.bookings)) {
+        window.bookings = data.bookings;
       }
-    }, { onlyOnce: false });
+      // Herrender actieve pagina
+      try { if (typeof renderDash      === 'function') renderDash();      } catch(e){}
+      try { if (typeof renderTaken     === 'function') renderTaken();     } catch(e){}
+      try { if (typeof renderBezetting === 'function') renderBezetting(); } catch(e){}
+    });
 
     return true;
   } catch(e) {
     console.warn('❌ Firebase fbLoad fout:', e.message);
     window._fbReady = false;
     return false;
+  }
+};
+
+window.fbSave = function() {
+  if (!window._fbReady) return;
+  if (window._fbSaveTimeout) clearTimeout(window._fbSaveTimeout);
+  window._fbSaveTimeout = setTimeout(async () => {
+    try {
+      // Sla enkel db op bij gewone saves (taken, team, etc.)
+      await set(ref(_fbDatabase, 'loftbeheer/db'), window.db);
+      console.log('✅ Firebase db opgeslagen');
+    } catch(e) {
+      console.warn('❌ Firebase fbSave fout:', e.message);
+    }
+  }, 800);
+};
+
+// Enkel aan te roepen na Stardekk import of manuele boeking
+window.fbSaveBookings = async function() {
+  if (!window._fbReady) return;
+  try {
+    await set(ref(_fbDatabase, 'loftbeheer/bookings'), window.bookings);
+    await set(ref(_fbDatabase, 'loftbeheer/db'), window.db); // ook taken updaten (nieuwe poestaken)
+    console.log('✅ Firebase bookings + db opgeslagen na Stardekk sync');
+  } catch(e) {
+    console.warn('❌ Firebase fbSaveBookings fout:', e.message);
   }
 };
 
@@ -1457,9 +1501,12 @@ let bookings = [];
 let db = {taken:[], periodiek:[], history:[], clState:{}, inspectie_states:{}, uitDienst:{}, inspecties:[], loftInventaris:{}, poetsConfig:{}};
 
 function save(){
+  // Lokale backup altijd
   try{localStorage.setItem('dh7_LEEG_db',JSON.stringify(db));}catch(e){}
   try{localStorage.setItem('dh4_LEEG_bookings',JSON.stringify(bookings));}catch(e){}
+  // db → Firebase (gedeeld tussen alle gebruikers)
   if(typeof window._fbReady!=='undefined' && window._fbReady && typeof window.fbSave==='function') window.fbSave();
+  // bookings → enkel SP (komen van Stardekk, niet via Firebase)
   if(typeof _spReady!=='undefined' && _spReady) spSave();
 }
 function load(){
@@ -2529,13 +2576,16 @@ function getProfielById(pid){
 function loginProfile(pid){ doLogin(pid); } // legacy compat
 
 async function initStep1(){
-  // Firebase laden bij startup — altijd in try/catch zodat app nooit blokkeert
+  // Eerst lokale data laden als fallback
+  load(); loadBookings();
+
+  // Firebase laden — overschrijft db (taken, team, etc.) maar NIET bookings
   try {
     const fbOk = await fbLoad();
     if(fbOk){
-      try{localStorage.setItem('dh7_LEEG_db',JSON.stringify(db));}catch(e){}
-      try{localStorage.setItem('dh4_LEEG_bookings',JSON.stringify(bookings));}catch(e){}
-      load(); loadBookings();
+      // db komt nu van Firebase, maar bookings blijven lokaal
+      // Zorg dat load() de Firebase db niet overschrijft
+      console.log('Firebase actief — db gesynchroniseerd');
     }
   } catch(e){ console.warn('Firebase startup fout:', e.message); }
   // SP auth — volledig niet-blokkerend
@@ -8834,7 +8884,10 @@ function _sdImportBevestigen(){
     nieuw++;
   });
   verwijderd = Math.max(0, verwijderd - nieuw); // netto verwijderd
-  save();closeM('mT');
+  save();
+  // Stardekk import → bookings + db naar Firebase zodat alle gebruikers updaten
+  if(typeof window.fbSaveBookings==='function') window.fbSaveBookings();
+  closeM('mT');
   toast(`✅ ${nieuw} nieuw · ${gewijzigd} bijgewerkt${verwijderd?' · '+verwijderd+' verwijderd':''}`,'ok');
   renderDash();
 }
@@ -8864,32 +8917,35 @@ async function spSyncStardekk(silent){
     const rows=XLSX.utils.sheet_to_json(ws,{raw:false,dateNF:'yyyy-mm-dd'});
     const {parsed,geannuleerd,skip}=_sdParseRows(rows);
     let nieuw=0,gewijzigd=0,verwijderd=0;
-    // Verwijder geannuleerde boekingen + hun taken
+
+    // Stap 1: verwijder expliciet geannuleerde boekingen + hun taken
     geannuleerd.forEach(p=>{
       const idx=bookings.findIndex(b=>b.sdId===p.sdId&&b.loftId===p.loftId);
       if(idx!==-1){const bkId=bookings[idx].id;bookings.splice(idx,1);db.taken=db.taken.filter(t=>t.bkId!==bkId);verwijderd++;}
     });
-    // Volledige sync: vervang alle SD-boekingen
+
+    // Stap 2: volledige sync — bewaar manueel ingestelde tijden
     const bewaardMap2={};
     bookings.filter(b=>b.sdId).forEach(b=>{
       bewaardMap2[b.sdId+'_'+b.loftId]={inTijd:b.inTijd_manueel?b.inTijd:null,outTijd:b.outTijd_manueel?b.outTijd:null,inTijd_manueel:b.inTijd_manueel,outTijd_manueel:b.outTijd_manueel};
-      db.taken=db.taken.filter(t=>t.bkId!==b.id);
+      db.taken=db.taken.filter(t=>t.bkId!==b.id); // verwijder gerelateerde taken
       verwijderd++;
     });
+    // Verwijder alle oude SD-boekingen (worden hieronder vervangen door nieuwe set)
     bookings=bookings.filter(b=>!b.sdId);
+
+    // Stap 3: voeg nieuwe set toe (volledige vervanging)
     parsed.forEach(p=>{
       const bw=bewaardMap2[p.sdId+'_'+p.loftId]||{};
       bookings.push({...p,id:'sd_'+uid(),inTijd:bw.inTijd_manueel?bw.inTijd:p.inTijd,outTijd:bw.outTijd_manueel?bw.outTijd:p.outTijd,inTijd_manueel:bw.inTijd_manueel||false,outTijd_manueel:bw.outTijd_manueel||false});
       nieuw++;
     });
-    verwijderd=Math.max(0,verwijderd-nieuw);
-    parsed.forEach(p=>{
-      const idx=bookings.findIndex(b=>b.sdId===p.sdId&&b.loftId===p.loftId);
-      if(idx===-1){bookings.push({...p,id:'sd_'+uid()});nieuw++;}
-      else if(bookings[idx].checkIn!==p.checkIn||bookings[idx].checkOut!==p.checkOut||(bookings[idx].name||bookings[idx].gast)!==(p.name||p.gast)){const bt={inTijd:bookings[idx].inTijd_manueel?bookings[idx].inTijd:p.inTijd,outTijd:bookings[idx].outTijd_manueel?bookings[idx].outTijd:p.outTijd};
-          bookings[idx]={...bookings[idx],...p,...bt};gewijzigd++;}
-    });
-    if(nieuw||gewijzigd){save();renderDash();}
+    verwijderd=Math.max(0,verwijderd-nieuw); // netto verwijderd
+
+    // Altijd opslaan en Firebase updaten (ook bij enkel verwijderingen)
+    save();
+    if(typeof window.fbSaveBookings==='function') window.fbSaveBookings();
+    renderDash();
     if(!silent)toast('✅ Stardekk: '+nieuw+' nieuw · '+gewijzigd+' bijgewerkt'+(verwijderd?' · '+verwijderd+' verwijderd':'')+' · '+skip+' overgeslagen','ok');
     try{localStorage.setItem('sd_last_sync',new Date().toISOString());}catch(e){}
     return true;
