@@ -1304,8 +1304,9 @@ async function fbPushNow(){
     try{ ld = JSON.parse(localStorage.getItem('dh7_LEEG_db')||'null'); }catch(e){}
     if(lb && lb.length) bookings = lb;
     if(ld){ db = ld; }
+    console.log('Push: bookings=', bookings.length, 'db.taken=', (db.taken||[]).length, 'db.team=', (db.team||[]).length);
+    alert('Push: ' + bookings.length + ' bk, ' + (db.taken||[]).length + ' taken, ' + (db.team||[]).length + ' team');
     await fbSaveBookings();
-    // Push ook volledige db (team, taken, etc.)
     await fbSave();
     if(txt) txt.textContent = '✅ ' + bookings.length + ' gepusht';
     toast('✅ ' + bookings.length + ' bookings naar Firebase','ok');
