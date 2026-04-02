@@ -823,13 +823,20 @@ var st,ct,ut,lt,dt,ht,pt,gt,ft,mt=function(){function t(e,t,r){this.networkInter
       <button class="sb-out" onclick="logout()" title="Afmelden">↩</button>
     </div>
     <div style="margin-top:auto;border-top:1px solid var(--dh-bdr)">
-    <div id="sp-login-row" style="padding:6px 10px 4px">
+    <div id="sp-login-row" style="padding:6px 10px 4px;display:flex;flex-direction:column;gap:4px">
       <button onclick="spAanmelden()" id="sp-login-knop"
         style="width:100%;background:var(--dh-sur2);border:1px solid var(--dh-bdr);
           border-radius:6px;padding:5px 8px;font-size:10px;color:var(--dh-muted);
           cursor:pointer;display:flex;align-items:center;gap:5px;justify-content:center">
         <span id="sp-status-ico">⏳</span>
         <span id="sp-status-txt">Sync laden...</span>
+      </button>
+      <button onclick="fbPushNow()" id="fb-push-knop"
+        style="width:100%;background:var(--dh-sur2);border:1px solid #c8922a55;
+          border-radius:6px;padding:5px 8px;font-size:10px;color:var(--dh-muted);
+          cursor:pointer;display:flex;align-items:center;gap:5px;justify-content:center">
+        <span id="fb-push-ico">🔥</span>
+        <span id="fb-push-txt">Push naar Firebase</span>
       </button>
     </div>
     <div style="text-align:center;padding:2px 0 4px;font-size:9px;color:var(--dh-muted);letter-spacing:.5px">v6 · De Hoorn Loftbeheer</div>
@@ -8854,6 +8861,13 @@ function _sdImportBevestigen(){
       outTijd: b._bewaardOutTijd,
       inTijd_manueel:  b.inTijd_manueel,
       outTijd_manueel: b.outTijd_manueel,
+      // Bewaar alle manueel ingestelde velden — blijven staan na sync
+      note:              b.note              || null,
+      extras:            b.extras            || null,
+      extraKamer:        b.extraKamer        || null,
+      status:            b.status            || null,
+      eindPoetsTijdVan:  b.eindPoetsTijdVan  || null,
+      eindPoetsTijdTot:  b.eindPoetsTijdTot  || null,
     };
   });
 
@@ -8870,10 +8884,18 @@ function _sdImportBevestigen(){
     const bewaard = bewaardeTijdenMap[p.sdId+'_'+p.loftId] || {};
     const inTijd  = bewaard.inTijd_manueel  ? bewaard.inTijd  : p.inTijd;
     const outTijd = bewaard.outTijd_manueel ? bewaard.outTijd : p.outTijd;
-    bookings.push({...p, id:'sd_'+uid(), inTijd, outTijd,
+    const bk = {...p, id:'sd_'+uid(), inTijd, outTijd,
       inTijd_manueel:  bewaard.inTijd_manueel  || false,
       outTijd_manueel: bewaard.outTijd_manueel || false,
-    });
+    };
+    // Herstel manueel ingestelde velden
+    if(bewaard.note)             bk.note             = bewaard.note;
+    if(bewaard.extras)           bk.extras           = bewaard.extras;
+    if(bewaard.extraKamer)       bk.extraKamer       = bewaard.extraKamer;
+    if(bewaard.status)           bk.status           = bewaard.status;
+    if(bewaard.eindPoetsTijdVan) bk.eindPoetsTijdVan = bewaard.eindPoetsTijdVan;
+    if(bewaard.eindPoetsTijdTot) bk.eindPoetsTijdTot = bewaard.eindPoetsTijdTot;
+    bookings.push(bk);
     nieuw++;
   });
   verwijderd = Math.max(0, verwijderd - nieuw); // netto verwijderd
@@ -8979,6 +9001,26 @@ function _spUpdateKnop(){
   }
 }
 
+
+// Manuele Firebase push — synchroniseert alle data naar Firebase
+async function fbPushNow(){
+  const ico = document.getElementById('fb-push-ico');
+  const txt = document.getElementById('fb-push-txt');
+  if(!window._fbReady){ toast('Firebase niet verbonden','err'); return; }
+  if(ico) ico.textContent = '⏳';
+  if(txt) txt.textContent = 'Bezig...';
+  try {
+    await window.fbSaveBookings();
+    if(ico) ico.textContent = '✅';
+    if(txt) txt.textContent = 'Firebase bijgewerkt';
+    toast('✅ Bookings + data naar Firebase gepusht','ok');
+    setTimeout(()=>{ if(ico) ico.textContent='🔥'; if(txt) txt.textContent='Push naar Firebase'; }, 3000);
+  } catch(e) {
+    if(ico) ico.textContent = '❌';
+    if(txt) txt.textContent = 'Push mislukt';
+    toast('Firebase push mislukt: '+e.message,'err');
+  }
+}
 </script>
 
 <!-- PRINT PLANNING MODAL -->
