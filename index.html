@@ -1096,8 +1096,17 @@ window.fbLoad = async function(){
         var bk = data.bookings;
         if(!Array.isArray(bk)) bk = Object.values(bk);
         bk = bk.filter(function(x){ return x != null; });
-        if(bk.length) window.bookings = bk;
-        console.log('FB geladen: ' + bk.length + ' bookings');
+        if(bk.length){
+          window.bookings = bk;
+          console.log('FB geladen: ' + bk.length + ' bookings');
+          // Herrender bezetting als die actief is
+          setTimeout(function(){
+            if(window.curProfile){
+              try{ if(typeof renderAgenda==='function') renderAgenda(); }catch(e){}
+              try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
+            }
+          }, 200);
+        }
       }
     } else {
       // Eerste keer: push lokale data
