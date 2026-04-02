@@ -1116,8 +1116,16 @@ var st,ct,ut,lt,dt,ht,pt,gt,ft,mt=function(){function t(e,t,r){this.networkInter
     if(obj===null||obj===undefined) return obj;
     if(Array.isArray(obj)) return obj.map(_fbRestoreKeys);
     if(typeof obj==='object'){
+      var keys = Object.keys(obj);
+      // Firebase slaat arrays op als object met numerieke keys — converteer terug
+      var isArr = keys.length > 0 && keys.every(function(k){ return /^\d+$/.test(k); });
+      if(isArr){
+        var arr = [];
+        keys.forEach(function(k){ arr[parseInt(k)] = _fbRestoreKeys(obj[k]); });
+        return arr;
+      }
       var out={};
-      Object.keys(obj).forEach(function(k){
+      keys.forEach(function(k){
         var rk=k.replace(/_dot_/g,'.').replace(/_hash_/g,'#').replace(/_dol_/g,'$').replace(/_sl_/g,'/').replace(/_ob_/g,'[').replace(/_cb_/g,']');
         out[rk]=_fbRestoreKeys(obj[k]);
       });
@@ -3778,6 +3786,7 @@ function renderDash(){
 
 // ══ BEZETTING / AGENDA ══
 function renderAgenda(){
+  console.log('renderAgenda aangeroepen, bookings:', bookings.length, 'eerste:', bookings[0]?.loftId, bookings[0]?.checkIn);
   const today=new Date(); today.setHours(0,0,0,0);
   const start=new Date(today); start.setDate(today.getDate()+agendaOffset*14);
   const days=[];
