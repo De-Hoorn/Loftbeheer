@@ -7446,7 +7446,21 @@ function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2
 function renderPage(){if(curProfile&&typeof nav==='function')nav(_curPage||'dashboard');}
 
 load();loadBookings();_refreshBeddenStock();seedPeriodiek();seedInventaris();
-initStep1();_initTijdBalk();
+
+// Wacht tot Firebase module beschikbaar is op window, dan pas initStep1
+// (type="module" scripts laden asynchroon — op mobiel kan timing afwijken)
+function _waitForFbAndInit(attempt) {
+  if (typeof window.fbLoad === 'function') {
+    initStep1();
+  } else if (attempt < 50) { // max 5 seconden wachten
+    setTimeout(function(){ _waitForFbAndInit(attempt + 1); }, 100);
+  } else {
+    console.warn('Firebase niet beschikbaar na timeout — app start zonder Firebase');
+    initStep1();
+  }
+}
+_waitForFbAndInit(0);
+_initTijdBalk();
 // Migratie na volledig laden: herbereken eindpoets-datums + verwijder dubbels
 setTimeout(function(){
   // Versie-gebaseerde reset: hermaak eindpoets-taken als versie veranderd is
