@@ -2535,8 +2535,11 @@ async function initStep1(){
   try {
     const fbOk = await fbLoad();
     if(fbOk){
-      console.log('Firebase actief');
-      try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
+      console.log('Firebase actief — bookings:', bookings.length);
+      // Als gebruiker al ingelogd is, herrender meteen
+      if(window.curProfile && document.getElementById('app') && document.getElementById('app').style.display !== 'none'){
+        try{ if(typeof renderP==='function'&&window._curPage) renderP(window._curPage); }catch(e){}
+      }
     }
   } catch(e){ console.warn('Firebase startup fout:', e.message); }
   // SP auth — volledig niet-blokkerend
@@ -3508,7 +3511,10 @@ function startApp(){
   const rol = curProfile?.rol || 'eigenaar';
   const defaults={eigenaar:'dashboard',inspecteur:'taken',inspecteur_n1:'inspecties',inspecteur_n2:'inspecties',schoonmaak_n1:'taken',schoonmaak_n2:'taken',tech_n1:'taken',tech_n2:'taken',gast:'checklist'};
   nav(defaults[rol]||'dashboard');
-  setTimeout(function(){ try{ if(typeof renderP==='function'&&_curPage) renderP(_curPage); }catch(e){} }, 1500);
+  // Herrender na korte wachttijd — Firebase data is dan zeker beschikbaar
+  setTimeout(function(){
+    try{ if(typeof renderP==='function'&&_curPage) renderP(_curPage); }catch(e){}
+  }, 800);
 }
 
 function toggleSidebar(){
