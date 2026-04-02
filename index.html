@@ -1158,9 +1158,9 @@ var st,ct,ut,lt,dt,ht,pt,gt,ft,mt=function(){function t(e,t,r){this.networkInter
         var d = s.val();
         if(d.db){ window.db = _fbRestoreKeys(d.db); }
         if(d.bookings && Array.isArray(d.bookings)){ window.bookings = _fbRestoreKeys(d.bookings); }
+        // Herrender de actieve pagina
         try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
-        try{ if(typeof renderTaken==='function') renderTaken(); }catch(e){}
-        try{ if(typeof renderBezetting==='function') renderBezetting(); }catch(e){}
+        try{ if(typeof renderP==='function' && window._curPage) renderP(window._curPage); }catch(e){}
       });
       return true;
     } catch(e){
