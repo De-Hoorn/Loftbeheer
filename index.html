@@ -1214,8 +1214,12 @@ function fbSave(){
   if(!_fbReady || !_fbDb) return;
   clearTimeout(_fbSaveTimeout);
   _fbSaveTimeout = setTimeout(async function(){
-    try{ await _fbDb.ref('loftbeheer/db').set(db); }
-    catch(e){ console.warn('fbSave fout:', e.message); }
+    _fbPushInProgress = true;
+    try{
+      await _fbDb.ref('loftbeheer/db').set(db);
+      console.log('FB db opgeslagen');
+    } catch(e){ console.warn('fbSave fout:', e.message); }
+    setTimeout(function(){ _fbPushInProgress = false; }, 1000);
   }, 800);
 }
 
