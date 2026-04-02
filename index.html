@@ -1110,6 +1110,27 @@ function _fbObjFix(v){
   return {};
 }
 
+
+// Firebase staat geen . # $ / [ ] toe in object keys
+function _fbSan(obj){
+  if(obj===null||obj===undefined) return obj;
+  if(Array.isArray(obj)) return obj.map(_fbSan);
+  if(typeof obj==='object'){
+    var out={};
+    Object.keys(obj).forEach(function(k){
+      var sk=k.replace(/\./g,'__').replace(/#/g,'__').replace(/\$/g,'__').replace(/\//g,'__').replace(/\[/g,'__').replace(/\]/g,'__');
+      out[sk]=_fbSan(obj[k]);
+    });
+    return out;
+  }
+  return obj;
+}
+function _fbRes(obj){
+  // Geen restore nodig — originele data zit in window.db
+  // Firebase is enkel opslagmedium, we lezen altijd via window.db
+  return obj;
+}
+
 // ═══════════════════════════════════════
 // FIREBASE REALTIME DATABASE
 // ═══════════════════════════════════════
@@ -1262,13 +1283,9 @@ function fbSave(){
     _fbPushInProgress = true;
     try{
       // Maak een kopie van db met gefixte arrays
-      var dbClean = JSON.parse(JSON.stringify(db));
-      if(dbClean.taken) dbClean.taken = dbClean.taken.map(function(t){
-        if(t && t.loften && !Array.isArray(t.loften)) t.loften = Object.values(t.loften).filter(function(x){return x!=null;});
-        return t;
-      });
+      var dbClean = _fbSan(JSON.parse(JSON.stringify(db)));
       await _fbDb.ref('loftbeheer/db').set(dbClean);
-      console.log('FB db opgeslagen, taken:', (dbClean.taken||[]).length);
+      console.log('FB db opgeslagen, taken:', (db.taken||[]).length);
     } catch(e){ console.warn('fbSave fout:', e.message, e); }
     setTimeout(function(){ _fbPushInProgress = false; }, 1000);
   }, 800);
@@ -1277,19 +1294,9 @@ function fbSave(){
 async function fbSaveBookings(){
   if(!_fbReady || !_fbDb) return;
   try{
-    await _fbDb.ref('loftbeheer/bookings').set(bookings);
-    // Sanitize taken keys voor Firebase (geen punten toegelaten)
-    var takenClean = (db.taken||[]).map(function(t){
-      var tc = Object.assign({}, t);
-      // loftId met punt → vervang door underscore voor Firebase key veiligheid
-      // (maar bewaar originele waarde in het object)
-      if(tc.loften && typeof tc.loften === 'object' && !Array.isArray(tc.loften)){
-        tc.loften = Object.values(tc.loften).filter(function(x){return x!=null;});
-      }
-      return tc;
-    });
-    await _fbDb.ref('loftbeheer/db/taken').set(takenClean);
-    console.log('FB bookings + taken opgeslagen:', bookings.length, 'bk,', takenClean.length, 'taken');
+    await _fbDb.ref('loftbeheer/bookings').set(_fbSan(bookings));
+    await _fbDb.ref('loftbeheer/db/taken').set(_fbSan(db.taken||[]));
+    console.log('FB bookings + taken opgeslagen:', bookings.length, 'bk,', (db.taken||[]).length, 'taken');
   } catch(e){ console.warn('fbSaveBookings fout:', e.message, e); }
 }
 
@@ -1304,8 +1311,6 @@ async function fbPushNow(){
     try{ ld = JSON.parse(localStorage.getItem('dh7_LEEG_db')||'null'); }catch(e){}
     if(lb && lb.length) bookings = lb;
     if(ld){ db = ld; }
-    console.log('Push: bookings=', bookings.length, 'db.taken=', (db.taken||[]).length, 'db.team=', (db.team||[]).length);
-    alert('Push: ' + bookings.length + ' bk, ' + (db.taken||[]).length + ' taken, ' + (db.team||[]).length + ' team');
     await fbSaveBookings();
     await fbSave();
     if(txt) txt.textContent = '✅ ' + bookings.length + ' gepusht';
