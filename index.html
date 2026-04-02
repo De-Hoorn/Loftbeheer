@@ -1096,6 +1096,20 @@ function _spLoginBanner(){document.body.innerHTML='<div style="min-height:100vh;
 </script>
 <script>
 
+
+// Firebase zet arrays om naar objecten — zet ze terug
+function _fbArrFix(v){ 
+  if(!v) return [];
+  if(Array.isArray(v)) return v;
+  if(typeof v==='object') return Object.values(v).filter(function(x){return x!=null;});
+  return [];
+}
+function _fbObjFix(v){
+  if(!v) return {};
+  if(typeof v==='object' && !Array.isArray(v)) return v;
+  return {};
+}
+
 // ═══════════════════════════════════════
 // FIREBASE REALTIME DATABASE
 // ═══════════════════════════════════════
@@ -1152,13 +1166,23 @@ async function fbLoad(){
     if(snapDb.exists()){
       db = snapDb.val();
       // Zorg dat verplichte arrays altijd bestaan
-      if(!db.taken) db.taken = [];
-      if(!db.team) db.team = [];
-      if(!db.periodiek) db.periodiek = [];
-      if(!db.history) db.history = [];
-      if(!db.pins) db.pins = {};
-      if(!db.overrides) db.overrides = {};
-      console.log('FB db geladen');
+      // Firebase zet arrays om naar objecten — herstel correct
+      db.taken      = _fbArrFix(db.taken);
+      db.team       = _fbArrFix(db.team);
+      db.periodiek  = _fbArrFix(db.periodiek);
+      db.history    = _fbArrFix(db.history);
+      db.inspecties = _fbArrFix(db.inspecties);
+      db.bedden     = _fbArrFix(db.bedden);
+      db.extraFeestdagen = _fbArrFix(db.extraFeestdagen);
+      db.pins       = _fbObjFix(db.pins);
+      db.overrides  = _fbObjFix(db.overrides);
+      db.clState    = _fbObjFix(db.clState);
+      db.inspectie_states = _fbObjFix(db.inspectie_states);
+      db.loftInventaris   = _fbObjFix(db.loftInventaris);
+      db.poetsConfig      = _fbObjFix(db.poetsConfig);
+      db.customChecklists = _fbObjFix(db.customChecklists);
+      db.loftConfig       = _fbObjFix(db.loftConfig);
+      console.log('FB db geladen, taken:', db.taken.length, 'team:', db.team.length);
     } else {
       // Eerste keer: push lokale db
       var ld = null;
@@ -1192,12 +1216,18 @@ async function fbLoad(){
     _fbDb.ref('loftbeheer/db').on('value', function(s){
       if(!s.exists() || _fbPushInProgress) return;
       db = s.val();
-      if(!db.taken) db.taken = [];
-      if(!db.team) db.team = [];
-      if(!db.periodiek) db.periodiek = [];
-      if(!db.history) db.history = [];
-      if(!db.pins) db.pins = {};
-      if(!db.overrides) db.overrides = {};
+      db.taken      = _fbArrFix(db.taken);
+      db.team       = _fbArrFix(db.team);
+      db.periodiek  = _fbArrFix(db.periodiek);
+      db.history    = _fbArrFix(db.history);
+      db.inspecties = _fbArrFix(db.inspecties);
+      db.bedden     = _fbArrFix(db.bedden);
+      db.pins       = _fbObjFix(db.pins);
+      db.overrides  = _fbObjFix(db.overrides);
+      db.clState    = _fbObjFix(db.clState);
+      db.poetsConfig      = _fbObjFix(db.poetsConfig);
+      db.loftInventaris   = _fbObjFix(db.loftInventaris);
+      db.inspectie_states = _fbObjFix(db.inspectie_states);
       if(curProfile){
         try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
         try{ if(typeof renderP==='function' && _curPage) renderP(_curPage); }catch(e){}
