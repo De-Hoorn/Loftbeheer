@@ -1103,16 +1103,28 @@ window.fbLoad = async function() {
 
     if (snapshot.exists()) {
       const data = snapshot.val();
-      // db: taken, team, checklists, inspecties, etc.
+      // db: taken, team, checklists, etc.
       if (data.db) { window.db = data.db; }
-      // bookings: enkel geschreven door Stardekk sync — hier alleen lezen
+
       if (data.bookings && Array.isArray(data.bookings) && data.bookings.length > 0) {
+        // Firebase heeft bookings → gebruik die
         window.bookings = data.bookings;
         console.log('✅ Firebase bookings geladen:', data.bookings.length);
+      } else {
+        // Firebase heeft GEEN bookings → push lokale bookings als startpunt
+        // (dit gebeurt eenmalig bij eerste uitrol)
+        const localBk = JSON.parse(localStorage.getItem('dh4_LEEG_bookings') || 'null');
+        if (Array.isArray(localBk) && localBk.length > 0) {
+          console.log('ℹ️ Firebase heeft geen bookings — lokale bookings uploaden als startpunt:', localBk.length);
+          window.bookings = localBk;
+          await set(ref(_fbDatabase, 'loftbeheer/bookings'), localBk);
+          console.log('✅ Lokale bookings geüpload naar Firebase');
+        } else {
+          console.log('ℹ️ Geen bookings in Firebase of lokaal — wacht op Stardekk import');
+        }
       }
-      console.log('✅ Firebase db geladen');
     } else {
-      // Firebase is leeg → push lokale data als startpunt
+      // Firebase volledig leeg → push alles als startpunt
       console.log('ℹ️ Firebase leeg — lokale data uploaden als startpunt');
       try {
         const localDb = JSON.parse(localStorage.getItem('dh7_LEEG_db') || 'null');
@@ -1131,7 +1143,7 @@ window.fbLoad = async function() {
     onValue(ref(_fbDatabase, 'loftbeheer'), (snap) => {
       if (!snap.exists()) return;
       const data = snap.val();
-      if (data.db)       { window.db       = data.db; }
+      if (data.db) { window.db = data.db; }
       if (data.bookings && Array.isArray(data.bookings)) {
         window.bookings = data.bookings;
       }
@@ -2579,13 +2591,13 @@ async function initStep1(){
   // Eerst lokale data laden als fallback
   load(); loadBookings();
 
-  // Firebase laden — overschrijft db (taken, team, etc.) maar NIET bookings
+  // Firebase laden — overschrijft db én bookings met gedeelde data
   try {
     const fbOk = await fbLoad();
     if(fbOk){
-      // db komt nu van Firebase, maar bookings blijven lokaal
-      // Zorg dat load() de Firebase db niet overschrijft
-      console.log('Firebase actief — db gesynchroniseerd');
+      console.log('Firebase actief — data gesynchroniseerd');
+      // Herrender UI met Firebase data
+      try { if(typeof renderDash==='function') renderDash(); } catch(e){}
     }
   } catch(e){ console.warn('Firebase startup fout:', e.message); }
   // SP auth — volledig niet-blokkerend
