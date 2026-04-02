@@ -3008,7 +3008,7 @@ function slaWijzigingenOp(pid){
     const t = db.team.find(t=>t.id===pid);
     if(t){ t.name=naam; t.icon=icon||naam.slice(0,2); t.rol=rol; t.rollen=rollen; t.color=color; t.job=NIVEAU_LABELS[rol]||rol; t.pages=rolPagesVoor(rol); }
   }
-  save(); closeM('mT'); renderTeam(); initStep1();
+  save(); closeM('mT'); renderTeam();
   toast(`✅ ${naam} bijgewerkt`,'gold');
 }
 
@@ -3027,7 +3027,7 @@ function slaLidOp(){
   const id = 'team_'+uid();
   db.team.push({ id, name:naam, rol, rollen, _dyn:true, job:NIVEAU_LABELS[rol]||rol, color, icon:icon||naam.slice(0,2).toUpperCase(), pages:rolPagesVoor(rol) });
   if(pin) db.pins[id] = pin;
-  save(); closeM('mT'); renderTeam(); initStep1();
+  save(); closeM('mT'); renderTeam();
   toast(`✅ ${naam} toegevoegd`,'gold');
 }
 
@@ -3074,7 +3074,7 @@ function verwijderLid(pid){
   
   db.team = db.team.filter(t=>t.id!==pid);
   if(db.pins) delete db.pins[pid];
-  save(); renderTeam(); initStep1();
+  save(); renderTeam();
 }
 
 function rolPagesVoor(rol){
