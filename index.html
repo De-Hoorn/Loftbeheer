@@ -1098,14 +1098,15 @@ window.fbLoad = async function(){
         bk = bk.filter(function(x){ return x != null; });
         if(bk.length){
           window.bookings = bk;
+          window._fbBookingsKlaar = true;
           console.log('FB geladen: ' + bk.length + ' bookings');
-          // Herrender bezetting als die actief is
-          setTimeout(function(){
-            if(window.curProfile){
+          // Herrender als gebruiker al ingelogd is
+          if(window.curProfile){
+            setTimeout(function(){
               try{ if(typeof renderAgenda==='function') renderAgenda(); }catch(e){}
               try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
-            }
-          }, 200);
+            }, 100);
+          }
         }
       }
     } else {
@@ -1474,6 +1475,7 @@ function save(){
   if(typeof _spReady!=='undefined'&&_spReady) spSave();
 }
 function load(){
+  window._fbBookingsKlaar = window._fbBookingsKlaar || false;
   const s=localStorage.getItem('dh7_LEEG_db');
   if(s){try{db=JSON.parse(s);}catch(e){}}
   if(!db.taken)db.taken=[];
@@ -3667,7 +3669,6 @@ function renderP(p){
   if(p==='dashboard') renderDash();
   if(p==='triage')    renderTriage();
   if(p==='bezetting'){
-    alert('renderP bezetting, bookings:'+bookings.length);
     renderAgenda();
     const isEig = (rolNiveaus(curProfile?.id||'')||[]).includes('eigenaar');
     const btn = document.getElementById('printPlanBtn');
@@ -3750,16 +3751,10 @@ function renderDash(){
 
 // ══ BEZETTING / AGENDA ══
 function renderAgenda(){
-  // Debug: toon sample bookings
-  var dbgEl = document.getElementById('fb-debug-txt');
-  if(dbgEl && bookings.length > 0){
-    var b0 = bookings[0];
-    var info = 'bk[0]: loftId=' + b0.loftId + ' checkIn=' + b0.checkIn + ' checkOut=' + b0.checkOut + ' type=' + typeof b0.loftId;
-    dbgEl.innerHTML += '<div style="color:#8fd48f">' + info + '</div>';
-    document.getElementById('fb-debug').style.display='block';
-  } else if(dbgEl){
-    dbgEl.innerHTML += '<div style="color:#c84040">renderAgenda: bookings LEEG</div>';
-    document.getElementById('fb-debug').style.display='block';
+  // Als bookings nog niet geladen zijn van Firebase, wacht en probeer opnieuw
+  if(bookings.length === 0 && !window._fbBookingsKlaar){
+    setTimeout(function(){ if(typeof renderAgenda==='function') renderAgenda(); }, 500);
+    return;
   }
   const today=new Date(); today.setHours(0,0,0,0);
   const start=new Date(today); start.setDate(today.getDate()+agendaOffset*14);
@@ -3792,7 +3787,6 @@ function renderAgenda(){
       if(l.id===LOFTS[0].id && di===0 && !window._bezDebugDone){
         window._bezDebugDone=true;
         var b0=bookings[0]||{};
-        alert('bookings:'+bookings.length+'\nbk[0]: '+b0.loftId+' / '+b0.checkIn+'\nzoek: '+l.id+' / '+ds+'\nmatch:'+!!bk);
       }
       const isCI=bk&&bk.checkIn===ds;
       const isCO=bookings.find(b=>b.loftId===l.id&&b.checkOut===ds);
