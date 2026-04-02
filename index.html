@@ -682,6 +682,12 @@ var st,ct,ut,lt,dt,ht,pt,gt,ft,mt=function(){function t(e,t,r){this.networkInter
 </script>
 </head>
 <body>
+
+<!-- DEBUG OVERLAY — tijdelijk -->
+<div id="fb-debug" style="position:fixed;bottom:60px;left:0;right:0;background:#1a1a18;border-top:2px solid #c8922a;padding:8px 12px;font-size:11px;color:#f0ece4;z-index:9999;max-height:120px;overflow-y:auto;display:none">
+  <div style="font-weight:700;color:#c8922a;margin-bottom:4px">🔍 Firebase Debug</div>
+  <div id="fb-debug-txt"></div>
+</div>
 <!-- Mobile hamburger knop -->
 <button class="mobile-hamburger" onclick="document.querySelector('.sidebar').classList.toggle('mobile-open')"
   style="display:none;position:fixed;top:10px;left:10px;z-index:300;background:var(--dh-sur2);border:1px solid var(--dh-bdr);border-radius:8px;padding:8px 10px;cursor:pointer;font-size:16px">☰</button>
@@ -1134,8 +1140,19 @@ var st,ct,ut,lt,dt,ht,pt,gt,ft,mt=function(){function t(e,t,r){this.networkInter
     return obj;
   }
 
+  
+function _fbDebug(msg){
+  var el = document.getElementById('fb-debug');
+  var txt = document.getElementById('fb-debug-txt');
+  if(!el || !txt) return;
+  el.style.display = 'block';
+  txt.innerHTML += '<div>' + new Date().toLocaleTimeString() + ': ' + msg + '</div>';
+  console.log('FB DEBUG:', msg);
+}
+
   window.fbLoad = async function(){
     try {
+      _fbDebug('fbLoad gestart...');
       var snap = await _fbDb.ref('loftbeheer').get();
       if(snap.exists()){
         var data = snap.val();
@@ -1146,17 +1163,17 @@ var st,ct,ut,lt,dt,ht,pt,gt,ft,mt=function(){function t(e,t,r){this.networkInter
           // Zorg dat het een array is
           if(Array.isArray(restored) && restored.length > 0){
             window.bookings = restored;
-            console.log('FB bookings geladen:', restored.length);
+            console.log('FB bookings geladen:', restored.length); _fbDebug('bookings array: ' + restored.length);
           } else if(typeof restored === 'object'){
             // Object met numerieke keys → naar array
             var arr = Object.values(restored).filter(function(x){ return x && x.loftId; });
             if(arr.length > 0){
               window.bookings = arr;
-              console.log('FB bookings (object→array) geladen:', arr.length);
+              console.log('FB bookings (object→array) geladen:', arr.length); _fbDebug('bookings obj→arr: ' + arr.length);
             }
           }
         } else {
-          console.log('Firebase heeft nog geen bookings — gebruik Push knop na Stardekk import');
+          console.log('Firebase heeft nog geen bookings'); _fbDebug('GEEN bookings in Firebase');
         }
       } else {
         var ld = null; var lb2 = null;
