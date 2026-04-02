@@ -1097,7 +1097,7 @@ window.fbLoad = async function(){
         if(!Array.isArray(bk)) bk = Object.values(bk);
         bk = bk.filter(function(x){ return x != null; });
         if(bk.length){
-          window.bookings = bk;
+          bookings = bk; window.bookings = bk;
           window._fbBookingsKlaar = true;
           console.log('FB geladen: ' + bk.length + ' bookings');
           // Herrender als gebruiker al ingelogd is
@@ -1127,7 +1127,7 @@ window.fbLoad = async function(){
         var bk = d.bookings;
         if(!Array.isArray(bk)) bk = Object.values(bk);
         bk = bk.filter(function(x){ return x != null; });
-        if(bk.length) window.bookings = bk;
+        if(bk.length) bookings = bk;
       }
       if(window.curProfile){
         try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
@@ -1458,7 +1458,7 @@ const CHECKLISTS = {
 
 // Demo bezetting data
 let agendaOffset = 0;
-let bookings = [];
+var bookings = [];
 // ══ DATAMODEL v7 ══
 // db.tickets: ad hoc/legacy taken
 // db.cumulTasks: gecumuleerde categorietaken {id,categorie,toegewezenAan,urgentie,items:[{id,loftId,desc,status,src,aangemaaktOp,aangemaaktDoor,opgelostDoor,opgelostOp,note}]}
@@ -3070,7 +3070,6 @@ function updatePinDots(){
 }
 
 function doLogin(pid, rolOverride){
-  alert('doLogin: '+pid+' bk='+bookings.length+' fbKlaar='+window._fbBookingsKlaar);
   curProfile = getProfielById(pid);
   if(!curProfile) return;
   const rol = rolOverride || _pendingRol || curProfile.rol;
@@ -3521,11 +3520,10 @@ function startApp(){
   document.getElementById('app').style.display='block';
   buildSidebar();
   const rol = curProfile?.rol || 'eigenaar';
-  const defaults={eigenaar:'bezetting',inspecteur:'taken',inspecteur_n1:'inspecties',inspecteur_n2:'inspecties',schoonmaak_n1:'taken',schoonmaak_n2:'taken',tech_n1:'taken',tech_n2:'taken',gast:'checklist'};
+  const defaults={eigenaar:'dashboard',inspecteur:'taken',inspecteur_n1:'inspecties',inspecteur_n2:'inspecties',schoonmaak_n1:'taken',schoonmaak_n2:'taken',tech_n1:'taken',tech_n2:'taken',gast:'checklist'};
   const startPagina = defaults[rol]||'dashboard';
   // Wacht tot Firebase bookings geladen zijn voor eerste render
   function _doStart(){
-    alert('doStart: '+startPagina+' bk='+bookings.length+' klaar='+window._fbBookingsKlaar);
     nav(startPagina);
   }
   if(window._fbBookingsKlaar || bookings.length > 0){
