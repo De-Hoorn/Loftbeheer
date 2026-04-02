@@ -3027,8 +3027,13 @@ function slaLidOp(){
   const id = 'team_'+uid();
   db.team.push({ id, name:naam, rol, rollen, _dyn:true, job:NIVEAU_LABELS[rol]||rol, color, icon:icon||naam.slice(0,2).toUpperCase(), pages:rolPagesVoor(rol) });
   if(pin) db.pins[id] = pin;
-  save(); closeM('mT'); renderTeam();
+  console.log('Voor save: db.team.length=', db.team.length, JSON.stringify(db.team.slice(-1)));
+  save();
+  console.log('Na save: db.team.length=', db.team.length);
+  closeM('mT'); renderTeam();
   toast(`✅ ${naam} toegevoegd`,'gold');
+  // Check na 2 seconden of teamlid nog bestaat
+  setTimeout(function(){ console.log('Na 2s: db.team.length=', db.team.length, 'team=', JSON.stringify(db.team.map(function(t){return t.name;}))); }, 2000);
 }
 
 function bewerkLid(pid){
