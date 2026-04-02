@@ -3787,6 +3787,18 @@ function renderAgenda(){
       const ds=d.toISOString().slice(0,10);
       const isToday=ds===todayStr;
       const bk=bookings.find(b=>b.loftId===l.id&&b.checkIn<=ds&&b.checkOut>ds);
+      // DEBUG eerste cel van eerste loft eerste dag
+      if(l.id===LOFTS[0].id && di===0 && !window._bezDebugDone){
+        window._bezDebugDone=true;
+        var dbg=document.getElementById('fb-debug-txt');
+        if(dbg){
+          var b0=bookings[0]||{};
+          dbg.innerHTML+='<div style="color:yellow">bk[0]: loft='+b0.loftId+' in='+b0.checkIn+' out='+b0.checkOut+'</div>';
+          dbg.innerHTML+='<div style="color:yellow">zoek: loft='+l.id+' dag='+ds+'</div>';
+          dbg.innerHTML+='<div style="color:yellow">match='+!!bk+' totaal='+bookings.length+'</div>';
+          document.getElementById('fb-debug').style.display='block';
+        }
+      }
       const isCI=bk&&bk.checkIn===ds;
       const isCO=bookings.find(b=>b.loftId===l.id&&b.checkOut===ds);
       let cell='';
