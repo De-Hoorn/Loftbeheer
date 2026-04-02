@@ -1151,6 +1151,13 @@ async function fbLoad(){
 
     if(snapDb.exists()){
       db = snapDb.val();
+      // Zorg dat verplichte arrays altijd bestaan
+      if(!db.taken) db.taken = [];
+      if(!db.team) db.team = [];
+      if(!db.periodiek) db.periodiek = [];
+      if(!db.history) db.history = [];
+      if(!db.pins) db.pins = {};
+      if(!db.overrides) db.overrides = {};
       console.log('FB db geladen');
     } else {
       // Eerste keer: push lokale db
@@ -1185,6 +1192,12 @@ async function fbLoad(){
     _fbDb.ref('loftbeheer/db').on('value', function(s){
       if(!s.exists() || _fbPushInProgress) return;
       db = s.val();
+      if(!db.taken) db.taken = [];
+      if(!db.team) db.team = [];
+      if(!db.periodiek) db.periodiek = [];
+      if(!db.history) db.history = [];
+      if(!db.pins) db.pins = {};
+      if(!db.overrides) db.overrides = {};
       if(curProfile){
         try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
         try{ if(typeof renderP==='function' && _curPage) renderP(_curPage); }catch(e){}
@@ -3027,13 +3040,8 @@ function slaLidOp(){
   const id = 'team_'+uid();
   db.team.push({ id, name:naam, rol, rollen, _dyn:true, job:NIVEAU_LABELS[rol]||rol, color, icon:icon||naam.slice(0,2).toUpperCase(), pages:rolPagesVoor(rol) });
   if(pin) db.pins[id] = pin;
-  console.log('Voor save: db.team.length=', db.team.length, JSON.stringify(db.team.slice(-1)));
-  save();
-  console.log('Na save: db.team.length=', db.team.length);
-  closeM('mT'); renderTeam();
+  save(); closeM('mT'); renderTeam();
   toast(`✅ ${naam} toegevoegd`,'gold');
-  // Check na 2 seconden of teamlid nog bestaat
-  setTimeout(function(){ console.log('Na 2s: db.team.length=', db.team.length, 'team=', JSON.stringify(db.team.map(function(t){return t.name;}))); }, 2000);
 }
 
 function bewerkLid(pid){
@@ -3660,6 +3668,7 @@ function buildSidebar(){
 
 
 function updateBdg(){
+  if(!db || !db.taken) return; // beveilig tegen undefined
   // Triage badge: niet-toegewezen taken voor eigenaar
   const triageCount = db.taken.filter(t=>{
     if(t.status==='klaar') return false;
