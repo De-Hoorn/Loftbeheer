@@ -1941,6 +1941,20 @@ function _taakTab(tab, taakId){
 function triageDetail(id){ openTaakDetail(id); }
 
 
+function tussNietUitgevoerd(taakId){
+  const t = db.taken.find(x=>x.id===taakId); if(!t) return;
+  const bk = t.bkId ? bookings.find(b=>b.id===t.bkId) : null;
+  if(!confirm('Markeer tussentijdse poets als niet uitgevoerd? Dit wordt geregistreerd in de historiek.')) return;
+  t.status = 'klaar'; // verwijder uit takenoverzicht
+  t._nietUitgevoerd = true;
+  addH('poets', '⚠️ Tussentijdse poets niet uitgevoerd — Loft '+t.loftId,
+    (bk?bk.name+' · ':'')+'gepland '+fmtDate(t.datum)+' · gemarkeerd door '+curProfile?.name, '');
+  save();
+  if(typeof renderTaken==='function') renderTaken();
+  if(typeof updateBdg==='function') updateBdg();
+  toast('Geregistreerd als niet uitgevoerd', '');
+}
+
 function bevestigTussentijds(ticketId){
   const t = db.taken.find(tk=>tk.id===ticketId); if(!t)return;
   t.afgesprokenMetGast = true;
@@ -7453,6 +7467,28 @@ function renderSchoonmaakTaken(el, niveaus){
     if(t.status==='klaar') return false;
     if(t.type!=='poets') return false;
     if(!t.toegewezenAan?.startsWith('schoonmaak')) return false;
+    // Tussentijdse poets: speciale regels
+    if(t.titel?.includes('Tussentijds') && t.bkId){
+      const bk = bookings.find(b=>b.id===t.bkId);
+      if(bk){
+        // Verberg als loft nog niet bezet (CI nog niet geweest) of al uitgecheckt (CO dag)
+        if(todayStr < bk.checkIn) return false;  // voor check-in: niet zichtbaar
+        if(todayStr >= bk.checkOut) {
+          // CO dag of daarna: auto-historiek als niet klaar
+          if(t.status==='open'){
+            // Markeer als gemist in historiek (eenmalig)
+            const histKey = 'tuss_gemist_'+t.id;
+            if(!db.clState[histKey]){
+              db.clState[histKey] = true;
+              addH('poets','⚠️ Tussentijdse poets niet uitgevoerd — Loft '+t.loftId,
+                'Boeking '+bk.name+' · gepland '+fmtDate(t.datum),'');
+              setTimeout(function(){ save(); }, 100);
+            }
+          }
+          return false; // niet meer tonen
+        }
+      }
+    }
     // loftVrijVereist: verberg als loft bezet
     if(t.loftVrijVereist && t.loftId){
       if(bookings.some(b=>b.loftId===t.loftId&&b.checkIn<=todayStr&&b.checkOut>todayStr)) return false;
@@ -7482,9 +7518,30 @@ function renderSchoonmaakTaken(el, niveaus){
     });
   });
 
+  // ── Tussentijdse: schoonmaker ziet enkel eerstvolgende per boeking ──────
+  const isEigenaar = curRole === 'eigenaar';
+  let poetsTakenGefilterd = poetsTaken;
+  if(!isEigenaar){
+    // Per bkId: enkel de tussentijdse taak met de vroegste datum tonen
+    const tussBkIds = new Set(
+      poetsTaken.filter(t=>t.titel?.includes('Tussentijds')&&t.bkId).map(t=>t.bkId)
+    );
+    const eerstePerBk = {};
+    tussBkIds.forEach(bkId=>{
+      const taken = poetsTaken
+        .filter(t=>t.titel?.includes('Tussentijds')&&t.bkId===bkId)
+        .sort((a,b)=>(a.datum||'')<(b.datum||'')?-1:1);
+      if(taken.length) eerstePerBk[bkId] = taken[0].id;
+    });
+    poetsTakenGefilterd = poetsTaken.filter(t=>{
+      if(!t.titel?.includes('Tussentijds')) return true; // andere taken altijd tonen
+      return eerstePerBk[t.bkId] === t.id; // enkel de eerste tuss per boeking
+    });
+  }
+
   // ── Combineer en sorteer ────────────────────────────────────────────────
   const alleTaken = [
-    ...poetsTaken.map(t=>({_src:'taak', sortKey:new Date(t.datum||t.date||todayStr).getTime(), data:t})),
+    ...poetsTakenGefilterd.map(t=>({_src:'taak', sortKey:new Date(t.datum||t.date||todayStr).getTime(), data:t})),
     ...systeemTaken.map(t=>({_src:'systeem', sortKey:t.sortKey, data:t})),
   ].sort((a,b)=>a.sortKey-b.sortKey);
 
@@ -7497,7 +7554,9 @@ function renderSchoonmaakTaken(el, niveaus){
         // Taak uit db.taken
         const tDate = new Date(t.datum||t.date||todayStr); tDate.setHours(0,0,0,0);
         const diffD = Math.round((tDate-today)/86400000);
-        const isToekomst = diffD > 21; // Toon taken tot 3 weken vooraf
+        // Tussentijdse: nooit als toekomst (CI check zit al in filter)
+        // Eindpoets en extras: toon tot 21 dagen vooraf
+        const isToekomst = isTuss ? false : diffD > 21;
         const kleur = diffD<0?'var(--dh-red)':diffD===0?'var(--dh-red)':diffD<=1?'var(--dh-ora)':diffD<=7?'var(--dh-blue)':'var(--dh-sur3)';
         const kleurTxt = diffD<=1?'#fff':diffD<=7?'#fff':'var(--dh-muted)';
         const datStr = diffD<0?'Te laat':diffD===0?'Vandaag':diffD===1?'Morgen':fmtDate(t.datum||t.date);
@@ -7506,7 +7565,11 @@ function renderSchoonmaakTaken(el, niveaus){
         const _onclick = isToekomst ? '' : `onclick="openPoetsDetail('${t.id}')"`;
         const _datStr = isToekomst ? fmtDate(t.datum||t.date,true) : (diffD<0?'Te laat':diffD===0?'Vandaag':diffD===1?'Morgen':diffD<=7?fmtDate(t.datum||t.date,true):fmtDate(t.datum||t.date,true));
         const bevestigd2 = t.afgesprokenMetGast===true;
-        const isTussVoorstel = t.bkId && t.afgesprokenMetGast===false && t.titel?.includes('Tussentijds');
+        const isTuss = t.titel?.includes('Tussentijds');
+        const isTussVoorstel = t.bkId && t.afgesprokenMetGast===false && isTuss;
+        const isEigenaarView = curRole === 'eigenaar';
+        // Tussentijdse: altijd klikbaar als gast ingecheckt (filter zorgt al dat CO dag weg is)
+        // isToekomst override: tuss is nooit "toekomst" als we hier zijn (filter heeft al CI check gedaan)
         html += `<div style="background:var(--dh-sur);border:1.5px solid ${kleur}33;border-left:4px solid ${kleur};border-radius:10px;padding:14px 16px;margin-bottom:10px;opacity:${isToekomst?'.6':'1'};cursor:${isToekomst?'default':'pointer'}" ${_onclick}>
           <div class="taken-kaart-inner" style="display:flex;align-items:center;gap:14px">
             <div style="font-family:var(--disp);font-size:28px;font-weight:800;color:${kleur};width:52px;text-align:center;flex-shrink:0">${t.loftId}</div>
@@ -7514,13 +7577,14 @@ function renderSchoonmaakTaken(el, niveaus){
               <div style="font-family:var(--disp);font-size:14px;font-weight:700;color:var(--dh-cream);margin-bottom:2px">${t.titel}</div>
               ${t.tijdVan?`<div style="font-size:10px;color:var(--dh-muted)">⏰ na ${t.tijdVan}${t.tijdTot?' · voor '+t.tijdTot:''}</div>`:''}
               ${t.note?`<div style="font-size:10px;color:var(--dh-muted)">${t.note}</div>`:''}
-              ${isTussVoorstel?'<span style="font-size:9px;background:rgba(160,120,200,.15);color:var(--dh-pur);border:1px solid rgba(160,120,200,.3);padding:1px 6px;border-radius:10px">Voorstel datum</span>':''}
-              ${bevestigd2?'<span style="font-size:9px;background:var(--dh-grn-l);color:var(--dh-grn);border:1px solid var(--dh-grn);padding:1px 6px;border-radius:10px;font-weight:700">✓ Bevestigd</span>':''}
+              ${isTussVoorstel&&isEigenaarView?'<span style="font-size:9px;background:rgba(160,120,200,.15);color:var(--dh-pur);border:1px solid rgba(160,120,200,.3);padding:1px 6px;border-radius:10px">Gast nog niet verwittigd</span>':''}
+              ${bevestigd2?'<span style="font-size:9px;background:var(--dh-grn-l);color:var(--dh-grn);border:1px solid var(--dh-grn);padding:1px 6px;border-radius:10px;font-weight:700">✓ Gast verwittigd</span>':''}
             </div>
             <div class="taken-kaart-rechts" style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0">
               <div style="font-size:11px;font-weight:800;padding:4px 12px;border-radius:20px;background:${kleur};color:${kleurTxt};white-space:nowrap">${_datStr||fmtDate(t.datum||t.date)}</div>
-              ${isTussVoorstel?`<button onclick="event.stopPropagation();bevestigTussentijds('${t.id}')" style="background:rgba(160,120,200,.15);border:1.5px solid var(--dh-pur);border-radius:6px;padding:3px 9px;color:var(--dh-pur);font-size:10px;font-weight:700;cursor:pointer">🔒 Bevestig</button>`:''}
-              ${bevestigd2&&t.bkId?`<button onclick="event.stopPropagation();wijzigTussentijdsDatum('${t.id}')" style="background:var(--dh-sur2);border:1px solid var(--dh-bdr);border-radius:6px;padding:3px 9px;color:var(--dh-muted);font-size:10px;cursor:pointer">✏ Datum</button>`:''}
+              ${isTussVoorstel&&isEigenaarView?`<button onclick="event.stopPropagation();bevestigTussentijds('${t.id}')" style="background:rgba(160,120,200,.15);border:1.5px solid var(--dh-pur);border-radius:6px;padding:3px 9px;color:var(--dh-pur);font-size:10px;font-weight:700;cursor:pointer">✉ Gast verwittigd</button>`:''}
+              ${bevestigd2&&t.bkId&&isEigenaarView?`<button onclick="event.stopPropagation();wijzigTussentijdsDatum('${t.id}')" style="background:var(--dh-sur2);border:1px solid var(--dh-bdr);border-radius:6px;padding:3px 9px;color:var(--dh-muted);font-size:10px;cursor:pointer">✏ Datum</button>`:''}
+              ${isTuss&&isEigenaarView?`<button onclick="event.stopPropagation();tussNietUitgevoerd('${t.id}')" style="background:var(--dh-red-l);border:1px solid var(--dh-red);border-radius:6px;padding:3px 9px;color:var(--dh-red);font-size:10px;cursor:pointer">✕ Niet uitgevoerd</button>`:''}
               <button onclick="event.stopPropagation();updTS('${t.id}','klaar')" style="background:var(--dh-grn-l);border:1.5px solid var(--dh-grn);border-radius:8px;padding:6px 14px;color:var(--dh-grn);font-size:11px;font-weight:700;cursor:pointer;min-height:36px;white-space:nowrap">✓ Gedaan</button>
             </div>
           </div>
