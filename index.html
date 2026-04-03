@@ -3505,8 +3505,9 @@ function renderDash(){
     <div class="stat sgrn"><div class="stat-l">AFGEWERKT</div><div class="stat-v">${done}</div><div class="stat-s">Voltooid</div></div>
   `;
 
-  // Sorteer op aangemaaktOp of datum — nieuwste eerst
+  // Recente activiteit: enkel open taken, gesorteerd op aanmaakdatum (nieuwste eerst)
   const recent=[...db.taken]
+    .filter(t=>t.status==='open'&&(!t.gebundeld||t.loften?.some(i=>i.status==='open')))
     .sort((a,b)=>{
       const da = a.aangemaaktOp||a.datum||'';
       const db2 = b.aangemaaktOp||b.datum||'';
@@ -7647,6 +7648,13 @@ function renderSchoonmaakTaken(el, niveaus){
 
 function openPoetsDetail(taakId){
   const t = db.taken.find(x=>x.id===taakId); if(!t) return;
+  // Controleer of taak uitvoerbaar is (datum niet meer dan 21 dagen in toekomst)
+  if(t.datum){
+    const tDate = new Date(t.datum+'T12:00:00'); tDate.setHours(0,0,0,0);
+    const diffD = Math.round((tDate-nowDay())/86400000);
+    const isTussT = t.titel?.includes('Tussentijds');
+    if(!isTussT && diffD > 21) return; // te ver in toekomst
+  }
   const bk = t.bkId ? bookings.find(b=>b.id===t.bkId) : null;
 
   const isEind    = t.titel==='Eindpoets';
