@@ -7226,14 +7226,20 @@ function _beheerStardekk(){
     <div style="max-width:600px">
       <div style="font-size:13px;font-weight:700;color:var(--dh-cream);margin-bottom:8px">📥 Stardekk boekingen importeren</div>
       <div style="font-size:11px;color:var(--dh-muted);margin-bottom:16px">
-        Exporteer reservaties uit Stardekk als Excel (.xlsx) en upload het hier.<br>
-        Bestaande boekingen worden bijgewerkt, manuele aanpassingen blijven bewaard.
+        Exporteer reservaties uit Stardekk als Excel en sleep het bestand hieronder.<br>
+        Geannuleerde boekingen worden overgeslagen. Manuele aanpassingen blijven bewaard.
       </div>
       <input type="file" id="sd-file" accept=".xlsx,.xls" onchange="_sdParseFile(this)" style="display:none">
-      <button onclick="document.getElementById('sd-file').click()"
-        style="background:var(--dh-sur2);border:1.5px solid var(--dh-bdr);border-radius:8px;padding:10px 20px;color:var(--dh-cream);font-size:12px;cursor:pointer;margin-bottom:12px">
-        📂 Excel bestand kiezen
-      </button>
+      <div id="sd-dropzone"
+        ondragover="event.preventDefault();this.style.borderColor='var(--dh-gold)';this.style.background='rgba(200,146,42,.08)'"
+        ondragleave="this.style.borderColor='var(--dh-bdr)';this.style.background='var(--dh-sur2)'"
+        ondrop="event.preventDefault();this.style.borderColor='var(--dh-bdr)';this.style.background='var(--dh-sur2)';const f=event.dataTransfer.files[0];if(f){const inp=document.getElementById('sd-file');const dt=new DataTransfer();dt.items.add(f);inp.files=dt.files;_sdParseFile(inp);}"
+        onclick="document.getElementById('sd-file').click()"
+        style="border:2px dashed var(--dh-bdr);border-radius:12px;padding:32px 20px;text-align:center;cursor:pointer;background:var(--dh-sur2);transition:all .2s;margin-bottom:12px">
+        <div style="font-size:32px;margin-bottom:8px">📊</div>
+        <div style="font-size:13px;font-weight:700;color:var(--dh-cream);margin-bottom:4px">Sleep Excel bestand hierheen</div>
+        <div style="font-size:11px;color:var(--dh-muted)">of klik om te bladeren · .xlsx of .xls</div>
+      </div>
       <div id="sd-preview" style="margin-top:8px"></div>
       <button id="sd-ok" onclick="_sdImportBevestigen()" style="display:none;margin-top:12px;background:var(--dh-gold);border:none;border-radius:8px;padding:10px 24px;color:#111;font-size:13px;font-weight:700;cursor:pointer">
         ✅ Importeren
@@ -7248,7 +7254,6 @@ function _sdParseFile(input){
     try{
       const wb = XLSX.read(e.target.result, {type:'array', cellDates:true});
       const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, {raw:false, dateNF:'yyyy-mm-dd'});
       const parsed = [];
 
       // Normaliseer datum: "2026-04-19 00:00:00" of andere formaten → "2026-04-19"
@@ -7264,16 +7269,24 @@ function _sdParseFile(input){
         return s.slice(0,10);
       };
 
-      rows.forEach(function(row){
+      // Lees ook raw data voor kolom-index aanpak
+      const rawSheet = wb.Sheets[wb.SheetNames[0]];
+      const range = XLSX.utils.decode_range(rawSheet['!ref']);
+      const allRows = [];
+      for(var r=range.s.r+1; r<=range.e.r; r++){
+        const getCell = function(col){ const c=rawSheet[XLSX.utils.encode_cell({r:r,c:col})]; return c?String(c.v||'').trim():''; };
+        allRows.push({ci:getCell(1),co:getCell(2),gast:getCell(4),status:getCell(15),acc:getCell(18)});
+      }
+
+      allRows.forEach(function(row){
         // Sla geannuleerde boekingen over
-        const status = String(row['Status'] || row['status'] || '').trim();
+        const status = row.status;
         if(status === 'Geannuleerd') return;
 
-        // Kolom B = Aankomst, C = Vertrek, E = Contact informatie, S = Accommodaties
-        const ciRaw = row['Aankomst'] || row['Arrival'] || row['arrival'] || '';
-        const coRaw = row['Vertrek'] || row['Departure'] || row['departure'] || '';
-        const gast  = String(row['Contact informatie'] || row['contact informatie'] || row['naam'] || row['name'] || 'Onbekend').trim();
-        const accRaw = String(row['Accommodaties'] || row['accommodaties'] || row['unit'] || '').trim();
+        const ciRaw = row.ci;
+        const coRaw = row.co;
+        const gast  = row.gast || 'Onbekend';
+        const accRaw = row.acc;
 
         const checkIn  = normDate(ciRaw);
         const checkOut = normDate(coRaw);
