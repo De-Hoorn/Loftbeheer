@@ -1275,7 +1275,7 @@ let bookings = [];
 
 let db = {taken:[], periodiek:[], history:[], clState:{}, inspectie_states:{}, uitDienst:{}, inspecties:[], loftInventaris:{}, poetsConfig:{}};
 
-function save(){localStorage.setItem('dh7_LEEG_db',JSON.stringify(db));if(typeof fbSave==='function')fbSave();}
+function save(){db._lastSaved=Date.now();localStorage.setItem('dh7_LEEG_db',JSON.stringify(db));if(typeof fbSave==='function')fbSave();}
 function load(){
   const s=localStorage.getItem('dh7_LEEG_db');
   if(s){try{db=JSON.parse(s);}catch(e){}}
@@ -7368,8 +7368,9 @@ async function fbLoad(){
         var nd=_fbSetDefaults(_fbFix(d.db));
         var fbTs = nd._lastSaved || 0;
         var localTs = db._lastSaved || 0;
-        // Firebase wint enkel als zijn data nieuwer is dan de lokale data
-        if(fbTs >= localTs) db=nd;
+        // Firebase wint ENKEL als zijn timestamp strikt groter is
+        // Bij gelijkspel (beide 0 = eerste opstart) wint lokaal
+        if(fbTs > localTs) db=nd;
       }
       if(d.bookings){var bk=_fbFix(d.bookings);if(!Array.isArray(bk))bk=Object.values(bk).filter(function(x){return x!=null;});if(bk.length)bookings=bk;}
       if(typeof curProfile!=='undefined'&&curProfile&&typeof renderP==='function'&&typeof _curPage!=='undefined'){
