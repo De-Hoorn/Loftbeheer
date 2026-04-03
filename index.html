@@ -7250,37 +7250,49 @@ function _sdParseFile(input){
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, {raw:false, dateNF:'yyyy-mm-dd'});
       const parsed = [];
+
+      // Normaliseer datum: "2026-04-19 00:00:00" of andere formaten → "2026-04-19"
+      const normDate = function(s){
+        if(!s) return '';
+        s = String(s).trim();
+        // Haal enkel het datumgedeelte op (eerste 10 tekens als YYYY-MM-DD)
+        if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+        const m1 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        if(m1) return m1[3]+'-'+m1[2].padStart(2,'0')+'-'+m1[1].padStart(2,'0');
+        const m2 = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/);
+        if(m2) return m2[3]+'-'+m2[2].padStart(2,'0')+'-'+m2[1].padStart(2,'0');
+        return s.slice(0,10);
+      };
+
       rows.forEach(function(row){
-        const keys = Object.keys(row);
-        const find = function(patterns){
-          for(const p of patterns){
-            const k = keys.find(function(k){ return k.toLowerCase().includes(p.toLowerCase()); });
-            if(k && row[k]) return String(row[k]).trim();
-          }
-          return '';
-        };
-        const loftRaw = find(['unit','loft','kamer','room','appartement']);
-        const gast = find(['name','naam','guest','gast','klant','client']);
-        const ciRaw = find(['arrival','check-in','checkin','aankomst','van','from','start']);
-        const coRaw = find(['departure','check-out','checkout','vertrek','tot','to','end']);
-        if(!loftRaw || !ciRaw || !coRaw) return;
-        const loftMatch = loftRaw.match(/(\d+)[._](\d+)/);
-        if(!loftMatch) return;
-        const loftId = loftMatch[1] + '.' + loftMatch[2];
-        const normDate = function(s){
-          if(!s) return '';
-          if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-          const m1 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-          if(m1) return m1[3]+'-'+m1[2].padStart(2,'0')+'-'+m1[1].padStart(2,'0');
-          const m2 = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-          if(m2) return m2[3]+'-'+m2[2].padStart(2,'0')+'-'+m2[1].padStart(2,'0');
-          return s.slice(0,10);
-        };
-        const checkIn = normDate(ciRaw);
+        // Sla geannuleerde boekingen over
+        const status = String(row['Status'] || row['status'] || '').trim();
+        if(status === 'Geannuleerd') return;
+
+        // Kolom B = Aankomst, C = Vertrek, E = Contact informatie, S = Accommodaties
+        const ciRaw = row['Aankomst'] || row['Arrival'] || row['arrival'] || '';
+        const coRaw = row['Vertrek'] || row['Departure'] || row['departure'] || '';
+        const gast  = String(row['Contact informatie'] || row['contact informatie'] || row['naam'] || row['name'] || 'Onbekend').trim();
+        const accRaw = String(row['Accommodaties'] || row['accommodaties'] || row['unit'] || '').trim();
+
+        const checkIn  = normDate(ciRaw);
         const checkOut = normDate(coRaw);
         if(!checkIn || !checkOut || checkIn >= checkOut) return;
-        if(!LOFTS.find(function(l){return l.id===loftId;})) return;
-        parsed.push({loftId, name:gast||'Onbekend', checkIn, checkOut});
+
+        // Kolom S kan meerdere loften bevatten, gescheiden door komma
+        // Formaat: "Regular loft // 55m² (Loft 9.1), Premium Loft // 80m² (Loft 10.4)"
+        const loftMatches = accRaw.match(/Loft (\d+\.\d+)/g);
+        if(!loftMatches || !loftMatches.length) return;
+
+        loftMatches.forEach(function(m){
+          const loftId = m.replace('Loft ','');
+          if(!LOFTS.find(function(l){return l.id===loftId;})) return;
+          // Vermijd duplicaten (zelfde loft + zelfde checkIn)
+          if(parsed.find(function(p){return p.loftId===loftId&&p.checkIn===checkIn;})) return;
+          // Status mapping
+          const bkStatus = (status==='Bevestigd') ? 'confirmed' : 'option';
+          parsed.push({loftId, name:gast, checkIn, checkOut, status:bkStatus});
+        });
       });
       window._sdParsed = parsed;
       const preview = document.getElementById('sd-preview');
@@ -7314,7 +7326,7 @@ function _sdImportBevestigen(){
       outTijd:  (bestaand&&bestaand.outTijd_manueel) ? bestaand.outTijd : '11:00',
       inTijd_manueel:  bestaand ? !!bestaand.inTijd_manueel  : false,
       outTijd_manueel: bestaand ? !!bestaand.outTijd_manueel : false,
-      status:   (bestaand&&bestaand.status) ? bestaand.status : 'bevestigd',
+      status:   (bestaand&&bestaand.status) ? bestaand.status : (p.status||'confirmed'),
       extraKamer: bestaand ? !!bestaand.extraKamer : false,
       extras:   (bestaand&&bestaand.extras)  ? bestaand.extras  : {},
       note:     (bestaand&&bestaand.note)    ? bestaand.note    : '',
