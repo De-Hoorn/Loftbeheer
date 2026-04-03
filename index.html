@@ -3722,7 +3722,8 @@ function bOnDateChange(){
   html += '<div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dh-cream)">'
     +'<span style="width:14px;height:14px;border-radius:3px;background:var(--dh-grn);flex-shrink:0;display:inline-block"></span>'
     +(()=>{
-    const _epT = db.taken.find(t=>t.bkId===bkId&&t.titel==='Eindpoets'&&t.status==='open');
+    const _editId = document.getElementById('mB')?.dataset?.editId||null;
+    const _epT = db.taken.find(t=>t.bkId===_editId&&t.titel==='Eindpoets'&&t.status==='open');
     const _epD = _epT ? _epT.datum : berekenEindpoetsDatum(co, null).datum;
     return '<span><strong>Eindpoets</strong> — '+fmtDate(_epD,true)+'</span>';
   })()
