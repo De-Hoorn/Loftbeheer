@@ -7256,14 +7256,21 @@ function _sdParseFile(input){
       const ws = wb.Sheets[wb.SheetNames[0]];
       const parsed = [];
 
-      // Normaliseer datum: "2026-04-19 00:00:00" of andere formaten → "2026-04-19"
+      // Normaliseer datum naar YYYY-MM-DD
       const normDate = function(s){
         if(!s) return '';
         s = String(s).trim();
-        // Haal enkel het datumgedeelte op (eerste 10 tekens als YYYY-MM-DD)
+        // YYYY-MM-DD (ook met tijd erachter)
         if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+        // Excel serienummer (getal)
+        if(/^\d{5}$/.test(s)){
+          const d = new Date(Math.round((parseInt(s)-25569)*86400*1000));
+          return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+        }
+        // DD/MM/YYYY
         const m1 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
         if(m1) return m1[3]+'-'+m1[2].padStart(2,'0')+'-'+m1[1].padStart(2,'0');
+        // DD-MM-YYYY
         const m2 = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/);
         if(m2) return m2[3]+'-'+m2[2].padStart(2,'0')+'-'+m2[1].padStart(2,'0');
         return s.slice(0,10);
@@ -7274,7 +7281,16 @@ function _sdParseFile(input){
       const range = XLSX.utils.decode_range(rawSheet['!ref']);
       const allRows = [];
       for(var r=range.s.r+1; r<=range.e.r; r++){
-        const getCell = function(col){ const c=rawSheet[XLSX.utils.encode_cell({r:r,c:col})]; return c?String(c.v||'').trim():''; };
+        const getCell = function(col){
+          var addr=XLSX.utils.encode_cell({r:r,c:col});
+          var c=rawSheet[addr];
+          if(!c) return '';
+          if(c.t==='d'&&c.v instanceof Date){
+            var d=c.v;
+            return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+          }
+          return String(c.w||c.v||'').trim();
+        };
         allRows.push({ci:getCell(1),co:getCell(2),gast:getCell(4),status:getCell(15),acc:getCell(18)});
       }
 
@@ -7300,8 +7316,6 @@ function _sdParseFile(input){
         loftMatches.forEach(function(m){
           const loftId = m.replace('Loft ','');
           if(!LOFTS.find(function(l){return l.id===loftId;})) return;
-          // Vermijd duplicaten (zelfde loft + zelfde checkIn)
-          if(parsed.find(function(p){return p.loftId===loftId&&p.checkIn===checkIn;})) return;
           // Status mapping
           const bkStatus = (status==='Bevestigd') ? 'confirmed' : 'option';
           parsed.push({loftId, name:gast, checkIn, checkOut, status:bkStatus});
