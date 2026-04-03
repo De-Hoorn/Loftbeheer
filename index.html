@@ -3951,11 +3951,11 @@ function saveBoeking(){
     }
     addTaak({type:'poets', loftId, titel:"Extra's plaatsen", desc:`Extra's plaatsen — ${naam}`,
       bron:'boeking', door:curProfile?.name||'systeem', toegewezenAan:rol,
-      datum:pd.toISOString().slice(0,10), tijdVan:'11:00', tijdTot:'15:00', prio:'hoog', bkId});
+      datum:pd.toISOString().slice(0,10), tijdVan:'11:00', tijdTot:'15:00', prio:'normaal', bkId});
     // Extra's verwijderen op zelfde dag als eindpoets (werkdag-aware)
     addTaak({type:'poets', loftId, titel:"Extra's verwijderen", desc:`Extra's verwijderen — ${naam}`,
       bron:'boeking', door:curProfile?.name||'systeem', toegewezenAan:rol,
-      datum:_epDatum.datum, tijdVan:_epDatum.tijdVan, tijdTot:_epDatum.tijdTot, prio:'hoog', bkId});
+      datum:_epDatum.datum, tijdVan:_epDatum.tijdVan, tijdTot:_epDatum.tijdTot, prio:'normaal', bkId});
   }
   save();
   addH('bezetting',`Boeking ${editId?'bijgewerkt':'toegevoegd'}: ${naam}`,`Loft ${loftId} · ${ci} → ${co}`,'hb');
@@ -7356,13 +7356,20 @@ async function fbLoad(){
       if(d.db){db=_fbSetDefaults(_fbFix(d.db));}
       if(d.bookings){var bk=_fbFix(d.bookings);if(!Array.isArray(bk))bk=Object.values(bk).filter(function(x){return x!=null;});if(bk.length)bookings=bk;}
     } else {
-      await _fbDb.ref('loftbeheer').set({db:_fbClean(db),bookings:bookings});
+      db._lastSaved = Date.now();
+    await _fbDb.ref('loftbeheer').set({db:_fbClean(db),bookings:bookings});
     }
     _fbReady=true;
     _fbDb.ref('loftbeheer').on('value',function(s){
       if(!s.exists()||_fbWriting)return;
       var d=s.val();
-      if(d.db)db=_fbSetDefaults(_fbFix(d.db));
+      if(d.db){
+        var nd=_fbSetDefaults(_fbFix(d.db));
+        var fbTs = nd._lastSaved || 0;
+        var localTs = db._lastSaved || 0;
+        // Firebase wint enkel als zijn data nieuwer is dan de lokale data
+        if(fbTs >= localTs) db=nd;
+      }
       if(d.bookings){var bk=_fbFix(d.bookings);if(!Array.isArray(bk))bk=Object.values(bk).filter(function(x){return x!=null;});if(bk.length)bookings=bk;}
       if(typeof curProfile!=='undefined'&&curProfile&&typeof renderP==='function'&&typeof _curPage!=='undefined'){
         try{renderP(_curPage);}catch(e){}
@@ -7378,6 +7385,7 @@ function fbSave(){
   clearTimeout(_fbWriteTimer);
   _fbWriteTimer=setTimeout(async function(){
     _fbWriting=true;
+    db._lastSaved = Date.now();
     try{await _fbDb.ref('loftbeheer/db').set(_fbClean(db));}
     catch(e){console.warn('fbSave:',e.message);}
     setTimeout(function(){_fbWriting=false;},500);
@@ -7386,6 +7394,7 @@ function fbSave(){
 async function fbSaveBookings(){
   if(!_fbReady||!_fbDb)return;
   _fbWriting=true;
+  db._lastSaved = Date.now();
   try{await _fbDb.ref('loftbeheer/bookings').set(bookings);await _fbDb.ref('loftbeheer/db').set(_fbClean(db));console.log('FB bookings+db opgeslagen');}
   catch(e){console.warn('fbSaveBookings:',e.message);}
   setTimeout(function(){_fbWriting=false;},500);
@@ -7482,7 +7491,7 @@ function renderSchoonmaakTaken(el, niveaus){
         // Taak uit db.taken
         const tDate = new Date(t.datum||t.date||todayStr); tDate.setHours(0,0,0,0);
         const diffD = Math.round((tDate-today)/86400000);
-        const isToekomst = diffD > 7;
+        const isToekomst = diffD > 21; // Toon taken tot 3 weken vooraf
         const kleur = diffD<0?'var(--dh-red)':diffD===0?'var(--dh-red)':diffD<=1?'var(--dh-ora)':diffD<=7?'var(--dh-blue)':'var(--dh-sur3)';
         const kleurTxt = diffD<=1?'#fff':diffD<=7?'#fff':'var(--dh-muted)';
         const datStr = diffD<0?'Te laat':diffD===0?'Vandaag':diffD===1?'Morgen':fmtDate(t.datum||t.date);
