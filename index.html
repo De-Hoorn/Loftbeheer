@@ -1378,7 +1378,7 @@ function addTaak({type, loftId, titel, desc, bron='systeem', door='systeem',
       taak.loften.push({id:uid(), loftId, desc:descKey,
         naam:(()=>{ const _m=descKey.match(/^(\d+)x\s+(.+?)\s+ontbreekt/i); return _m?_m[2].replace(/\s*\(\d+\)\s*$/,'').trim():descKey.replace(/^(Ontbreekt|Kapot|Vuil|Defect|Niet proper):\s*/i,'').replace(/\s*\(\d+\)\s*$/,'').trim(); })(),
         aantal:(()=>{ const _m=descKey.match(/^(\d+)x\s+/i); return _m?parseInt(_m[1]):1; })(),
-        status:'open', bron, aangemaaktOp:nowStr(), aangemaaktDoor:door, opgelostDoor:null, opgelostOp:null, note})
+        status:'open', bron, aangemaaktOp:nowStr(), aangemaaktTs:Date.now(), aangemaaktDoor:door, opgelostDoor:null, opgelostOp:null, note})
     }
     save(); return taak;
   } else {
@@ -1388,7 +1388,7 @@ function addTaak({type, loftId, titel, desc, bron='systeem', door='systeem',
       toegewezenAan:toegewezenAan||meta.rol||null,
       datum:datum||nowStr(), tijdVan, tijdTot, bkId, afgesprokenMetGast,
       loftVrijVereist:loftVrijVereist||false,
-      aangemaaktOp:nowStr(), aangemaaktDoor:door, opgelostDoor:null, opgelostOp:null, note};
+      aangemaaktOp:nowStr(), aangemaaktTs:Date.now(), aangemaaktDoor:door, opgelostDoor:null, opgelostOp:null, note};
     db.taken.push(taak); save(); return taak;
   }
 }
@@ -3509,8 +3509,12 @@ function renderDash(){
   const recent=[...db.taken]
     .filter(t=>t.status==='open'&&(!t.gebundeld||t.loften?.some(i=>i.status==='open')))
     .sort((a,b)=>{
-      const da = a.aangemaaktOp||a.datum||'';
-      const db2 = b.aangemaaktOp||b.datum||'';
+      // Sorteer op aanmaak timestamp (nieuwste eerst), dan op aanmaakdatum
+      const ta = a.aangemaaktTs||0;
+      const tb = b.aangemaaktTs||0;
+      if(tb!==ta) return tb-ta;
+      const da = a.aangemaaktOp||'';
+      const db2 = b.aangemaaktOp||'';
       return db2.localeCompare(da);
     }).slice(0,5);
   document.getElementById('d-activity').innerHTML=recent.length?recent.map(tk=>tHtml(tk,true)).join(''):`<div class="empty" style="padding:24px"><div class="empty-i">🎫</div><div class="empty-s">Geen activiteit</div></div>`;
