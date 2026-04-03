@@ -997,7 +997,7 @@ const BE_FEESTDAGEN_VAST = ['01-01','05-01','07-21','08-15','11-01','11-11','12-
 let _testOffset = 0;
 
 function now(){ return new Date(Date.now() + _testOffset); }
-function nowStr(){ return now().toISOString().slice(0,10); }
+function nowStr(){ const d=now(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function dateToStr(d){ 
   // Gebruik lokale datum om timezone bugs te vermijden
   if(!d) return '';
@@ -7559,6 +7559,7 @@ function renderSchoonmaakTaken(el, niveaus){
         // Taak uit db.taken
         const tDate = new Date(t.datum||t.date||todayStr); tDate.setHours(0,0,0,0);
         const diffD = Math.round((tDate-today)/86400000);
+        const isTuss = t.titel?.includes('Tussentijds');
         // Tussentijdse: nooit als toekomst (CI check zit al in filter)
         // Eindpoets en extras: toon tot 21 dagen vooraf
         const isToekomst = isTuss ? false : diffD > 21;
@@ -7570,7 +7571,6 @@ function renderSchoonmaakTaken(el, niveaus){
         const _onclick = isToekomst ? '' : `onclick="openPoetsDetail('${t.id}')"`;
         const _datStr = isToekomst ? fmtDate(t.datum||t.date,true) : (diffD<0?'Te laat':diffD===0?'Vandaag':diffD===1?'Morgen':diffD<=7?fmtDate(t.datum||t.date,true):fmtDate(t.datum||t.date,true));
         const bevestigd2 = t.afgesprokenMetGast===true;
-        const isTuss = t.titel?.includes('Tussentijds');
         const isTussVoorstel = t.bkId && t.afgesprokenMetGast===false && isTuss;
         const isEigenaarView = curRole === 'eigenaar' || (curRole||'').startsWith('inspecteur');
         // Tussentijdse: altijd klikbaar als gast ingecheckt (filter zorgt al dat CO dag weg is)
