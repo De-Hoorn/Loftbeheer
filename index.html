@@ -7559,10 +7559,10 @@ function renderSchoonmaakTaken(el, niveaus){
         // Taak uit db.taken
         const tDate = new Date(t.datum||t.date||todayStr); tDate.setHours(0,0,0,0);
         const diffD = Math.round((tDate-today)/86400000);
-        const isTuss = t.titel?.includes('Tussentijds');
+        const _isTussT = t.titel?.includes('Tussentijds');
         // Tussentijdse: nooit als toekomst (CI check zit al in filter)
         // Eindpoets en extras: toon tot 21 dagen vooraf
-        const isToekomst = isTuss ? false : diffD > 21;
+        const isToekomst = _isTussT ? false : diffD > 21;
         const kleur = diffD<0?'var(--dh-red)':diffD===0?'var(--dh-red)':diffD<=1?'var(--dh-ora)':diffD<=7?'var(--dh-blue)':'var(--dh-sur3)';
         const kleurTxt = diffD<=1?'#fff':diffD<=7?'#fff':'var(--dh-muted)';
         const datStr = diffD<0?'Te laat':diffD===0?'Vandaag':diffD===1?'Morgen':fmtDate(t.datum||t.date);
@@ -7571,7 +7571,7 @@ function renderSchoonmaakTaken(el, niveaus){
         const _onclick = isToekomst ? '' : `onclick="openPoetsDetail('${t.id}')"`;
         const _datStr = isToekomst ? fmtDate(t.datum||t.date,true) : (diffD<0?'Te laat':diffD===0?'Vandaag':diffD===1?'Morgen':diffD<=7?fmtDate(t.datum||t.date,true):fmtDate(t.datum||t.date,true));
         const bevestigd2 = t.afgesprokenMetGast===true;
-        const isTussVoorstel = t.bkId && t.afgesprokenMetGast===false && isTuss;
+        const isTussVoorstel = t.bkId && t.afgesprokenMetGast===false && _isTussT;
         const isEigenaarView = curRole === 'eigenaar' || (curRole||'').startsWith('inspecteur');
         // Tussentijdse: altijd klikbaar als gast ingecheckt (filter zorgt al dat CO dag weg is)
         // isToekomst override: tuss is nooit "toekomst" als we hier zijn (filter heeft al CI check gedaan)
@@ -7589,7 +7589,7 @@ function renderSchoonmaakTaken(el, niveaus){
               <div style="font-size:11px;font-weight:800;padding:4px 12px;border-radius:20px;background:${kleur};color:${kleurTxt};white-space:nowrap">${_datStr||fmtDate(t.datum||t.date)}</div>
               ${isTussVoorstel&&isEigenaarView?`<button onclick="event.stopPropagation();bevestigTussentijds('${t.id}')" style="background:rgba(160,120,200,.15);border:1.5px solid var(--dh-pur);border-radius:6px;padding:3px 9px;color:var(--dh-pur);font-size:10px;font-weight:700;cursor:pointer">✉ Gast verwittigd</button>`:''}
               ${bevestigd2&&t.bkId&&isEigenaarView?`<button onclick="event.stopPropagation();wijzigTussentijdsDatum('${t.id}')" style="background:var(--dh-sur2);border:1px solid var(--dh-bdr);border-radius:6px;padding:3px 9px;color:var(--dh-muted);font-size:10px;cursor:pointer">✏ Datum</button>`:''}
-              ${isTuss&&isEigenaarView?`<button onclick="event.stopPropagation();tussNietUitgevoerd('${t.id}')" style="background:var(--dh-red-l);border:1px solid var(--dh-red);border-radius:6px;padding:3px 9px;color:var(--dh-red);font-size:10px;cursor:pointer">✕ Niet uitgevoerd</button>`:''}
+              ${_isTussT&&isEigenaarView?`<button onclick="event.stopPropagation();tussNietUitgevoerd('${t.id}')" style="background:var(--dh-red-l);border:1px solid var(--dh-red);border-radius:6px;padding:3px 9px;color:var(--dh-red);font-size:10px;cursor:pointer">✕ Niet uitgevoerd</button>`:''}
               <button onclick="event.stopPropagation();updTS('${t.id}','klaar')" style="background:var(--dh-grn-l);border:1.5px solid var(--dh-grn);border-radius:8px;padding:6px 14px;color:var(--dh-grn);font-size:11px;font-weight:700;cursor:pointer;min-height:36px;white-space:nowrap">✓ Gedaan</button>
             </div>
           </div>
