@@ -998,6 +998,11 @@ let _testOffset = 0;
 
 function now(){ return new Date(Date.now() + _testOffset); }
 function nowStr(){ return now().toISOString().slice(0,10); }
+function dateToStr(d){ 
+  // Gebruik lokale datum om timezone bugs te vermijden
+  if(!d) return '';
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
 function nowDay(){ const d = now(); d.setHours(0,0,0,0); return d; }
 
 function _setTestTijd(){
@@ -1016,7 +1021,7 @@ function _resetTestTijd(){
   const n = now();
   const datEl = document.getElementById('ttDatum');
   const tijdEl = document.getElementById('ttTijd');
-  if(datEl) datEl.value = n.toISOString().slice(0,10);
+  if(datEl) datEl.value = dateToStr(n);
   if(tijdEl) tijdEl.value = n.toTimeString().slice(0,5);
   _updateTijdBalk();
   if(typeof renderPage === 'function') renderPage();
@@ -1027,7 +1032,7 @@ function _stepTijd(dagen){
   const n = now();
   const datEl = document.getElementById('ttDatum');
   const tijdEl = document.getElementById('ttTijd');
-  if(datEl) datEl.value = n.toISOString().slice(0,10);
+  if(datEl) datEl.value = dateToStr(n);
   if(tijdEl) tijdEl.value = n.toTimeString().slice(0,5);
   _updateTijdBalk();
   if(typeof renderPage === 'function') renderPage();
@@ -1047,7 +1052,7 @@ function _initTijdBalk(){
   const n = now();
   const datEl = document.getElementById('ttDatum');
   const tijdEl = document.getElementById('ttTijd');
-  if(datEl) datEl.value = n.toISOString().slice(0,10);
+  if(datEl) datEl.value = dateToStr(n);
   if(tijdEl) tijdEl.value = n.toTimeString().slice(0,5);
   _updateTijdBalk();
   setInterval(_updateTijdBalk, 30000);
@@ -2203,8 +2208,8 @@ function renderPrintPlanning(){
         if(!db.clState?.[stateKey]){
           const nextBk = sortedBk[idx+1];
           const { datum, deadline, heeftDeadline } = optimalePoetsDatum(bk.checkOut, nextBk?.checkIn||null);
-          const sameDagCI = nextBk && new Date(nextBk.checkIn).toISOString().slice(0,10) === datum.toISOString().slice(0,10);
-          const sameDagCO = datum.toISOString().slice(0,10) === bk.checkOut;
+          const sameDagCI = nextBk && dateToStr(new Date(nextBk.checkIn+'T12:00:00')) === dateToStr(datum);
+          const sameDagCO = dateToStr(datum) === bk.checkOut;
           // Tijdvenster bepalen
           let tijdVenster = '';
           if(sameDagCI && sameDagCO) tijdVenster = 'tussen 11:00 en 15:00';
@@ -2232,7 +2237,7 @@ function renderPrintPlanning(){
   // Groepeer per dag
   const perDag = {};
   taken.forEach(t=>{
-    const ds = t.datum.toISOString().slice(0,10);
+    const ds = dateToStr(t.datum);
     if(!perDag[ds]) perDag[ds]=[];
     perDag[ds].push(t);
   });
@@ -2264,7 +2269,7 @@ function renderPrintPlanning(){
       <tbody>`;
 
     dagen.forEach(d=>{
-      const ds = d.toISOString().slice(0,10);
+      const ds = dateToStr(d);
       const dagtaken = (perDag[ds]||[]).sort((a,b)=>a.loftId<b.loftId?-1:1);
       if(!dagtaken.length) return;
 
@@ -7519,7 +7524,7 @@ function renderSchoonmaakTaken(el, niveaus){
   });
 
   // ── Tussentijdse: schoonmaker ziet enkel eerstvolgende per boeking ──────
-  const isEigenaar = curRole === 'eigenaar';
+  const isEigenaar = curRole === 'eigenaar' || (curRole||'').startsWith('inspecteur');
   let poetsTakenGefilterd = poetsTaken;
   if(!isEigenaar){
     // Per bkId: enkel de tussentijdse taak met de vroegste datum tonen
@@ -7567,7 +7572,7 @@ function renderSchoonmaakTaken(el, niveaus){
         const bevestigd2 = t.afgesprokenMetGast===true;
         const isTuss = t.titel?.includes('Tussentijds');
         const isTussVoorstel = t.bkId && t.afgesprokenMetGast===false && isTuss;
-        const isEigenaarView = curRole === 'eigenaar';
+        const isEigenaarView = curRole === 'eigenaar' || (curRole||'').startsWith('inspecteur');
         // Tussentijdse: altijd klikbaar als gast ingecheckt (filter zorgt al dat CO dag weg is)
         // isToekomst override: tuss is nooit "toekomst" als we hier zijn (filter heeft al CI check gedaan)
         html += `<div style="background:var(--dh-sur);border:1.5px solid ${kleur}33;border-left:4px solid ${kleur};border-radius:10px;padding:14px 16px;margin-bottom:10px;opacity:${isToekomst?'.6':'1'};cursor:${isToekomst?'default':'pointer'}" ${_onclick}>
@@ -7874,7 +7879,7 @@ function _isWerkdag(datum){
  * @returns {{datum:string, tijdVan:string, tijdTot:string}}
  */
 function berekenEindpoetsDatum(coStr, nextCiStr){
-  const co = new Date(coStr); co.setHours(0,0,0,0);
+  const co = new Date(coStr+'T12:00:00'); co.setHours(0,0,0,0);
   const nextCi = nextCiStr ? (()=>{ const d=new Date(nextCiStr+'T12:00:00'); d.setHours(0,0,0,0); return d; })() : null;
 
   // Tijdvenster helpers
