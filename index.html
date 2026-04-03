@@ -3474,7 +3474,7 @@ function renderDash(){
   const done=db.taken.filter(t=>t.status==='klaar').length;
   const urg=db.taken.filter(t=>t.prio==='hoog'&&t.status!=='klaar'&&!t.gebundeld).length;
   const today=new Date(); today.setHours(0,0,0,0);
-  const todayStr=today.toISOString().slice(0,10);
+  const todayStr=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
   const checkins=bookings.filter(b=>b.checkIn===todayStr).length;
   const checkouts=bookings.filter(b=>b.checkOut===todayStr).length;
   const bezet=bookings.filter(b=>b.checkIn<=todayStr&&b.checkOut>todayStr).length;
@@ -3546,16 +3546,19 @@ function renderAgenda(){
     const tagC={regular:'tr',premium:'tp',large:'tl'};
     html+=`<tr><td class="loft-name"><span class="ltag ${tagC[l.type]}" style="margin-right:4px">${l.type==='premium'?'P':l.type==='large'?'L':''}</span>${l.id}</td>`;
     days.forEach((d,di)=>{
-      const ds=d.toISOString().slice(0,10);
+      // Gebruik lokale datum (niet UTC) om timezone-bugs te vermijden
+      const ds=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
       const isToday=ds===todayStr;
       const bk=bookings.find(b=>b.loftId===l.id&&b.checkIn<=ds&&b.checkOut>ds);
       const isCI=bk&&bk.checkIn===ds;
       const isCO=bookings.find(b=>b.loftId===l.id&&b.checkOut===ds);
       let cell='';
-      if(isCO&&!bk) cell=`<div class="booking-block bb-checkout" style="width:50%;left:0;right:auto" title="Check-out ${isCO.name}">↩</div>`;
+      if(isCO&&!bk){
+        // Check-out dag: volledig rood blok (analoog aan check-in blauw)
+        cell=`<div class="booking-block bb-checkout" title="Check-out ${isCO.name}" onclick="openBoekingDetail('${isCO.id}')"><span style="overflow:hidden;text-overflow:ellipsis">◀ ${isCO.name}</span></div>`;
+      }
       if(bk){
         const cls=isCI?'bb-checkin':bk.status==='option'?'bb-option':'bb-confirmed';
-        const lbl=isCI?`↓ ${bk.name}`:bk.name;
         cell=`<div class="booking-block ${cls}" title="${bk.name}" onclick="openBoekingDetail('${bk.id}')"><span style="overflow:hidden;text-overflow:ellipsis">${isCI?'▶':''} ${bk.name}</span></div>`;
       }
       html+=`<td class="${isToday?'today-col':''}"><div class="cal-cell">${cell}</div></td>`;
