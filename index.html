@@ -753,7 +753,7 @@ select option { background:var(--dh-sur); color:var(--dh-cream); }
       <button class="sb-out" onclick="logout()" title="Afmelden">↩</button>
     </div>
     <div style="padding:0 10px 6px"><button onclick="fbPushNow()" style="width:100%;background:var(--dh-sur2);border:1px solid #c8922a55;border-radius:6px;padding:5px 8px;font-size:10px;color:var(--dh-muted);cursor:pointer;display:flex;align-items:center;gap:5px;justify-content:center"><span>🔥</span><span id="fb-push-txt">Push naar Firebase</span></button></div>
-    <div style="text-align:center;padding:6px 0 2px;font-size:9px;color:var(--dh-muted);letter-spacing:.5px">v6 · De Hoorn Loftbeheer</div>
+    <div style="text-align:center;padding:6px 0 2px;font-size:9px;color:var(--dh-muted);letter-spacing:.5px">v7 · De Hoorn Loftbeheer</div>
   </div>
 </nav>
 
@@ -7321,6 +7321,8 @@ function _sdParseFile(input){
           parsed.push({loftId, name:gast, checkIn, checkOut, status:bkStatus});
         });
       });
+      console.log('SD parse: allRows='+allRows.length+' parsed='+parsed.length);
+      if(allRows.length) console.log('Eerste rij:', JSON.stringify(allRows[0]));
       window._sdParsed = parsed;
       const preview = document.getElementById('sd-preview');
       if(parsed.length){
