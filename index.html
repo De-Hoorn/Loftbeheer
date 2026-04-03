@@ -7590,7 +7590,7 @@ function renderSchoonmaakTaken(el, niveaus){
               ${isTussVoorstel&&isEigenaarView?`<button onclick="event.stopPropagation();bevestigTussentijds('${t.id}')" style="background:rgba(160,120,200,.15);border:1.5px solid var(--dh-pur);border-radius:6px;padding:3px 9px;color:var(--dh-pur);font-size:10px;font-weight:700;cursor:pointer">✉ Gast verwittigd</button>`:''}
               ${bevestigd2&&t.bkId&&isEigenaarView?`<button onclick="event.stopPropagation();wijzigTussentijdsDatum('${t.id}')" style="background:var(--dh-sur2);border:1px solid var(--dh-bdr);border-radius:6px;padding:3px 9px;color:var(--dh-muted);font-size:10px;cursor:pointer">✏ Datum</button>`:''}
               ${_isTussT&&isEigenaarView?`<button onclick="event.stopPropagation();tussNietUitgevoerd('${t.id}')" style="background:var(--dh-red-l);border:1px solid var(--dh-red);border-radius:6px;padding:3px 9px;color:var(--dh-red);font-size:10px;cursor:pointer">✕ Niet uitgevoerd</button>`:''}
-              <button onclick="event.stopPropagation();updTS('${t.id}','klaar')" style="background:var(--dh-grn-l);border:1.5px solid var(--dh-grn);border-radius:8px;padding:6px 14px;color:var(--dh-grn);font-size:11px;font-weight:700;cursor:pointer;min-height:36px;white-space:nowrap">✓ Gedaan</button>
+              ${!isToekomst?`<button onclick="event.stopPropagation();updTS('${t.id}','klaar')" style="background:var(--dh-grn-l);border:1.5px solid var(--dh-grn);border-radius:8px;padding:6px 14px;color:var(--dh-grn);font-size:11px;font-weight:700;cursor:pointer;min-height:36px;white-space:nowrap">✓ Gedaan</button>`:''}
             </div>
           </div>
         </div>`;
