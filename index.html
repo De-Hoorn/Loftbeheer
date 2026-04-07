@@ -7285,10 +7285,18 @@ function _sdParseFile(input){
           var addr=XLSX.utils.encode_cell({r:r,c:col});
           var c=rawSheet[addr];
           if(!c) return '';
+          // Datumcel: type 'd' met Date object (cellDates:true)
           if(c.t==='d'&&c.v instanceof Date){
             var d=c.v;
             return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
           }
+          // Datumcel: type 'n' (Excel serienummer)
+          if(c.t==='n' && c.v > 40000 && c.v < 100000){
+            var nd = new Date(Math.round((c.v - 25569) * 86400 * 1000));
+            nd.setMinutes(nd.getMinutes() + nd.getTimezoneOffset()); // timezone correctie
+            return nd.getFullYear()+'-'+String(nd.getMonth()+1).padStart(2,'0')+'-'+String(nd.getDate()).padStart(2,'0');
+          }
+          // Geformatteerde waarde of raw waarde
           return String(c.w||c.v||'').trim();
         };
         allRows.push({ci:getCell(1),co:getCell(2),gast:getCell(4),status:getCell(15),acc:getCell(18)});
@@ -7317,12 +7325,14 @@ function _sdParseFile(input){
           const loftId = m.replace('Loft ','');
           if(!LOFTS.find(function(l){return l.id===loftId;})) return;
           // Status mapping
-          const bkStatus = (status==='Bevestigd') ? 'confirmed' : 'option';
+          // Nieuw + In behandeling + Bevestigd = confirmed; enkel expliciet geannuleerd = overgeslagen
+          const bkStatus = (status==='Geannuleerd') ? 'cancelled' : 'confirmed';
           parsed.push({loftId, name:gast, checkIn, checkOut, status:bkStatus});
         });
       });
       console.log('SD parse: allRows='+allRows.length+' parsed='+parsed.length);
       if(allRows.length) console.log('Eerste rij:', JSON.stringify(allRows[0]));
+      if(parsed.length) console.log('Eerste parsed:', JSON.stringify(parsed[0]));
       window._sdParsed = parsed;
       const preview = document.getElementById('sd-preview');
       if(parsed.length){
@@ -7371,7 +7381,11 @@ function _sdImportBevestigen(){
       // Maak eindpoets taak aan
       const vBk = bookings.filter(function(b){ return b.loftId===p.loftId && b.checkIn>p.checkOut; })
         .sort(function(a,b){return a.checkIn<b.checkIn?-1:1;})[0];
-      const epDatum = berekenEindpoetsDatum(p.checkOut, vBk?vBk.checkIn:null);
+      // Valideer datum voor berekenEindpoetsDatum
+      const coStr = p.checkOut ? String(p.checkOut).slice(0,10) : '';
+      const ciStr = vBk ? String(vBk.checkIn).slice(0,10) : null;
+      if(!coStr || !/^\d{4}-\d{2}-\d{2}$/.test(coStr)){ console.warn('Ongeldige CO datum:', p.checkOut); nieuw++; return; }
+      const epDatum = berekenEindpoetsDatum(coStr, ciStr);
       addTaak({type:'poets', loftId:p.loftId, titel:'Eindpoets',
         desc:'Eindpoets — '+p.name, bron:'stardekk', door:'systeem',
         toegewezenAan: (db.poetsConfig&&db.poetsConfig.eindpoets) ? db.poetsConfig.eindpoets.rol : 'schoonmaak_n1',
