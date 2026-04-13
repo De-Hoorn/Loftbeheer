@@ -7355,6 +7355,14 @@ function _sdParseFile(input){
 
 function _sdImportBevestigen(){
   if(!window._sdParsed||!window._sdParsed.length){toast('Geen data','err');return;}
+  
+  // Ruim eerst verweesde Stardekk taken op (boeking bestaat niet meer)
+  db.taken = db.taken.filter(function(t){
+    if(t.bron !== 'stardekk') return true; // behoud niet-stardekk taken
+    if(!t.bkId) return false; // stardekk taak zonder boeking: verwijder
+    return bookings.some(function(b){ return b.id === t.bkId; }); // behoud enkel als boeking bestaat
+  });
+
   let nieuw=0, gewijzigd=0;
   window._sdParsed.forEach(function(p){
     const bestaand = bookings.find(function(b){ return b.loftId===p.loftId && b.checkIn===p.checkIn; });
@@ -7394,6 +7402,12 @@ function _sdImportBevestigen(){
       nieuw++;
     }
   });
+  // Verwijder taken met ongeldige datum
+  db.taken = db.taken.filter(function(t){
+    if(!t.datum) return true; // geen datum = ok (zsm)
+    return t.datum !== 'Invalid Date' && t.datum !== 'NaN-NaN-NaN';
+  });
+
   saveBookings(); save();
   if(typeof fbSaveBookings==='function') fbSaveBookings();
   toast('✅ '+nieuw+' nieuw · '+gewijzigd+' bijgewerkt','ok');
