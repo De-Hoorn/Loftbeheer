@@ -7356,11 +7356,25 @@ function _sdParseFile(input){
 function _sdImportBevestigen(){
   if(!window._sdParsed||!window._sdParsed.length){toast('Geen data','err');return;}
   
-  // Ruim eerst verweesde Stardekk taken op (boeking bestaat niet meer)
+  // Bepaal welke loftId+checkIn combinaties in de nieuwe import zitten
+  const nieuweKeys = new Set(window._sdParsed.map(function(p){ return p.loftId+'_'+p.checkIn; }));
+  
+  // Verwijder Stardekk boekingen die NIET meer in de nieuwe import zitten
+  const teVerwijderenBkIds = new Set();
+  bookings = bookings.filter(function(b){
+    if(!b._vanStardekk) return true; // behoud manuele boekingen
+    const key = b.loftId+'_'+b.checkIn;
+    if(!nieuweKeys.has(key)){
+      teVerwijderenBkIds.add(b.id);
+      return false; // verwijder uit bookings
+    }
+    return true;
+  });
+
+  // Verwijder taken van verwijderde Stardekk boekingen
   db.taken = db.taken.filter(function(t){
-    if(t.bron !== 'stardekk') return true; // behoud niet-stardekk taken
-    if(!t.bkId) return false; // stardekk taak zonder boeking: verwijder
-    return bookings.some(function(b){ return b.id === t.bkId; }); // behoud enkel als boeking bestaat
+    if(!t.bkId) return true;
+    return !teVerwijderenBkIds.has(t.bkId);
   });
 
   let nieuw=0, gewijzigd=0;
