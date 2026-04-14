@@ -3715,6 +3715,7 @@ function verwijderBoeking(bkId){
   bookings = bookings.filter(b=>b.id!==bkId);
   db.taken = db.taken.filter(t=>t.bkId!==bkId);
   saveBookings(); save(); closeM('mT');
+  if(typeof fbSaveBookings==='function') fbSaveBookings();
   updateBdg(); renderAgenda();
   toast('Boeking verwijderd','');
 }
@@ -4549,7 +4550,9 @@ function updTS(id,status){
   const tk=db.taken.find(t=>t.id===id);if(!tk)return;
   tk.status=status;
   if(status==='klaar'){ tk.opgelostOp=nowStr(); tk.opgelostDoor=curProfile?.name||'?'; addH('taak',`✅ ${tk.titel||tk.desc}`,`Loft ${tk.loftId||''}`,  'hg'); }
-  save();updateBdg();renderTaken();toast('Status bijgewerkt','ok');
+  save();
+  if(typeof fbSave==='function') fbSave(); // expliciet pushen
+  updateBdg();renderTaken();toast('Status bijgewerkt','ok');
 }
 function delT(id){db.taken=db.taken.filter(t=>t.id!==id);save();updateBdg();renderTaken();toast('Verwijderd','');}
 
@@ -7511,9 +7514,9 @@ async function fbLoad(){
         var nd=_fbSetDefaults(_fbFix(d.db));
         var fbTs = nd._lastSaved || 0;
         var localTs = db._lastSaved || 0;
-        // Firebase wint ENKEL als zijn timestamp strikt groter is
-        // Bij gelijkspel (beide 0 = eerste opstart) wint lokaal
-        if(fbTs > localTs) db=nd;
+        // Firebase wint ENKEL als zijn data strikt nieuwer is (min 2 seconden verschil)
+        // Dit voorkomt dat eigen writes terugkomen via de listener
+        if(fbTs > localTs + 2000) db=nd;
       }
       if(d.bookings){var bk=_fbFix(d.bookings);if(!Array.isArray(bk))bk=Object.values(bk).filter(function(x){return x!=null;});if(bk.length)bookings=bk;}
       if(typeof curProfile!=='undefined'&&curProfile&&typeof renderP==='function'&&typeof _curPage!=='undefined'){
@@ -7655,7 +7658,7 @@ function renderSchoonmaakTaken(el, niveaus){
     tussBkIds.forEach(bkId=>{
       const taken = poetsTaken
         .filter(t=>t.titel?.includes('Tussentijds')&&t.bkId===bkId)
-        .sort((a,b)=>(a.datum||'')<(b.datum||'')?-1:1);
+        .sort((a,b)=>(a.datum||'')>(b.datum||'')?1:-1); // oplopend: vroegste eerst
       if(taken.length) eerstePerBk[bkId] = taken[0].id;
     });
     poetsTakenGefilterd = poetsTaken.filter(t=>{
