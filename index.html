@@ -7480,6 +7480,8 @@ function _sdImportBevestigen(){
     return t.datum !== 'Invalid Date' && t.datum !== 'NaN-NaN-NaN';
   });
 
+  // Pauze listener 10s zodat import niet overschreven wordt
+  _fbPauzeUntil = Date.now() + 10000;
   saveBookings(); save();
   if(typeof fbSaveBookings==='function') fbSaveBookings();
   toast('✅ '+nieuw+' nieuw · '+gewijzigd+' bijgewerkt','ok');
@@ -7490,7 +7492,7 @@ function _sdImportBevestigen(){
 // ═══════════════════════════════════════════════════
 // FIREBASE SYNC
 // ═══════════════════════════════════════════════════
-var _fbDb=null,_fbReady=false,_fbWriteTimer=null,_fbWriting=false;
+var _fbDb=null,_fbReady=false,_fbWriteTimer=null,_fbWriting=false,_fbPauzeUntil=0;
 (function _fbTryInit(){
   if(typeof firebase==='undefined'||!firebase.database){setTimeout(_fbTryInit,300);return;}
   try{
@@ -7531,7 +7533,7 @@ async function fbLoad(){
     }
     _fbReady=true;
     _fbDb.ref('loftbeheer').on('value',function(s){
-      if(!s.exists()||_fbWriting)return;
+      if(!s.exists()||_fbWriting||Date.now()<_fbPauzeUntil)return;
       var d=s.val();
       if(d.db){
         var nd=_fbSetDefaults(_fbFix(d.db));
