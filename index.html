@@ -7400,6 +7400,29 @@ function _sdImportBevestigen(){
     };
     if(bestaand){
       bookings[bookings.indexOf(bestaand)] = boeking;
+      // Controleer of taken nog bestaan — zo niet, maak ze aan
+      const heeftEindpoets = db.taken.some(function(t){ return t.bkId===boeking.id && t.titel==='Eindpoets' && t.status==='open'; });
+      if(!heeftEindpoets){
+        const coStr0 = String(p.checkOut).slice(0,10);
+        if(/^\d{4}-\d{2}-\d{2}$/.test(coStr0)){
+          const vBk0 = bookings.filter(function(b){ return b.loftId===p.loftId && b.checkIn>p.checkOut && b.id!==boeking.id; })
+            .sort(function(a,b){return a.checkIn<b.checkIn?-1:1;})[0];
+          const ep0 = berekenEindpoetsDatum(coStr0, vBk0?String(vBk0.checkIn).slice(0,10):null);
+          addTaak({type:'poets', loftId:p.loftId, titel:'Eindpoets',
+            desc:'Eindpoets — '+p.name, bron:'stardekk', door:'systeem',
+            toegewezenAan:(db.poetsConfig&&db.poetsConfig.eindpoets)?db.poetsConfig.eindpoets.rol:'schoonmaak_n1',
+            datum:ep0.datum, tijdVan:ep0.tijdVan, tijdTot:ep0.tijdTot, prio:'normaal', bkId:boeking.id});
+        }
+      }
+      const heeftTuss = db.taken.some(function(t){ return t.bkId===boeking.id && t.titel?.includes('Tussentijds'); });
+      if(!heeftTuss){
+        berekenTussentijdsPoetsen(p.checkIn, p.checkOut).forEach(function(d){
+          addTaak({type:'poets', loftId:p.loftId, titel:'Tussentijdse poets',
+            desc:'Tussentijdse poets — '+p.name, bron:'stardekk', door:'systeem',
+            toegewezenAan:(db.poetsConfig&&db.poetsConfig.tussentijds)?db.poetsConfig.tussentijds.rol:'schoonmaak_n1',
+            datum:d, tijdVan:'11:00', tijdTot:'15:00', prio:'normaal', bkId:boeking.id, afgesprokenMetGast:false});
+        });
+      }
       // Boeking gewijzigd → herbereken eindpoets + tussentijdse volledig opnieuw
       if(bestaand.checkOut !== p.checkOut){
         const coStr2 = String(p.checkOut).slice(0,10);
