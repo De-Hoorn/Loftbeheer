@@ -7397,42 +7397,27 @@ function _sdImportBevestigen(){
     };
     if(bestaand){
       bookings[bookings.indexOf(bestaand)] = boeking;
-      // Als checkout gewijzigd is: herbereken eindpoets + tussentijdse taken
+      // Boeking gewijzigd → herbereken eindpoets + tussentijdse volledig opnieuw
       if(bestaand.checkOut !== p.checkOut){
         const coStr2 = String(p.checkOut).slice(0,10);
         if(/^\d{4}-\d{2}-\d{2}$/.test(coStr2)){
-          // Herbereken eindpoets datum
+          // Herbereken eindpoets
           const epTaak = db.taken.find(function(t){ return t.bkId===boeking.id && t.titel==='Eindpoets' && t.status==='open'; });
           if(epTaak){
             const vBk2 = bookings.filter(function(b){ return b.loftId===p.loftId && b.checkIn>p.checkOut && b.id!==boeking.id; })
               .sort(function(a,b){return a.checkIn<b.checkIn?-1:1;})[0];
-            const ciStr2 = vBk2 ? String(vBk2.checkIn).slice(0,10) : null;
-            const ep2 = berekenEindpoetsDatum(coStr2, ciStr2);
+            const ep2 = berekenEindpoetsDatum(coStr2, vBk2?String(vBk2.checkIn).slice(0,10):null);
             epTaak.datum = ep2.datum; epTaak.tijdVan = ep2.tijdVan; epTaak.tijdTot = ep2.tijdTot;
           }
-          // Herbereken tussentijdse taken volledig:
-          // 1. Bewaar bevestigde datums die nog geldig zijn (voor nieuwe CO, na CI)
-          const bevestigdeTuss = db.taken.filter(function(t){
-            return t.bkId===boeking.id && t.titel?.includes('Tussentijds')
-              && t.afgesprokenMetGast===true && t.datum < coStr2 && t.datum > p.checkIn;
-          }).map(function(t){ return t.datum; });
-          // 2. Verwijder alle bestaande tussentijdse taken voor deze boeking
+          // Verwijder alle tussentijdse taken en hermaak — opnieuw te bevestigen met gast
           db.taken = db.taken.filter(function(t){
             return !(t.bkId===boeking.id && t.titel?.includes('Tussentijds'));
           });
-          // 3. Hermaak op basis van nieuwe CI/CO
-          const nieuweTuss = berekenTussentijdsPoetsen(p.checkIn, coStr2);
-          nieuweTuss.forEach(function(d){
-            // Gebruik bevestigde datum als die dicht genoeg bij de berekende ligt (zelfde week)
-            const bevestigd = bevestigdeTuss.find(function(bd){
-              return Math.abs(new Date(bd)-new Date(d)) <= 7*86400000;
-            });
+          berekenTussentijdsPoetsen(p.checkIn, coStr2).forEach(function(d){
             addTaak({type:'poets', loftId:p.loftId, titel:'Tussentijdse poets',
               desc:'Tussentijdse poets — '+p.name, bron:'stardekk', door:'systeem',
               toegewezenAan: (db.poetsConfig&&db.poetsConfig.tussentijds) ? db.poetsConfig.tussentijds.rol : 'schoonmaak_n1',
-              datum: bevestigd||d, tijdVan:'11:00', tijdTot:'15:00',
-              prio:'normaal', bkId:boeking.id,
-              afgesprokenMetGast: !!bevestigd});
+              datum:d, tijdVan:'11:00', tijdTot:'15:00', prio:'normaal', bkId:boeking.id, afgesprokenMetGast:false});
           });
         }
       }
