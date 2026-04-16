@@ -1673,8 +1673,7 @@ function renderTaken(){
   const rolGroep = ROL_GROEP[actieveRol] || actieveRol;
 
   if(actieveRol === 'eigenaar'){
-    // Eigenaar ziet de volledige schoonmaakview met admin-knoppen
-    renderSchoonmaakTaken(el, ['schoonmaak_n1','schoonmaak_n2']);
+    _renderEigenaarTaken(el);
   } else if(rolGroep === 'schoonmaak' || actieveRol.startsWith('schoonmaak')){
     const niveaus = [actieveRol];
     renderSchoonmaakTaken(el, niveaus);
@@ -1691,23 +1690,62 @@ function renderTaken(){
 
 function _renderEigenaarTaken(el){
   const todayStr = nowStr();
+  const today = nowDay();
   const open = db.taken.filter(t=>t.status==='open');
+
+  // Poets taken gesorteerd op datum
+  const poets = open.filter(t=>t.type==='poets'&&!t.gebundeld).sort((a,b)=>(a.datum||'')<(b.datum||'')?-1:1);
+  // Andere taken (gebundeld en enkelvoudig)
+  const gebundeld = open.filter(t=>t.gebundeld&&t.loften?.some(i=>i.status==='open'));
+  const overig = open.filter(t=>!t.gebundeld&&t.type!=='poets').sort((a,b)=>(a.datum||'')<(b.datum||'')?-1:1);
+
   if(!open.length){
     el.innerHTML='<div class="empty"><div class="empty-i">✅</div><div class="empty-t">Geen open taken</div></div>';
     return;
   }
-  // Groepeer: gebundeld vs enkelvoudig, per type
-  const gebundeld = open.filter(t=>t.gebundeld&&t.loften?.some(i=>i.status==='open'));
-  const enkelvoudig = open.filter(t=>!t.gebundeld).sort((a,b)=>a.datum<b.datum?-1:1);
+
   let html = '';
+
+  if(poets.length){
+    html += sectionHeader('🧹 Poetstaken', poets.length, 'var(--dh-blue)');
+    poets.forEach(t=>{
+      const tDate = new Date(t.datum||todayStr); tDate.setHours(0,0,0,0);
+      const diffD = Math.round((tDate-today)/86400000);
+      const kleur = diffD<0?'var(--dh-red)':diffD===0?'var(--dh-red)':diffD<=1?'var(--dh-ora)':diffD<=7?'var(--dh-blue)':'var(--dh-sur3)';
+      const kleurTxt = diffD<=1?'#fff':diffD<=7?'#fff':'var(--dh-muted)';
+      const datStr = diffD<0?'Te laat':diffD===0?'Vandaag':diffD===1?'Morgen':fmtDate(t.datum,true);
+      const isTuss = t.titel?.includes('Tussentijds');
+      const isTussVoorstel = isTuss && t.afgesprokenMetGast===false && t.bkId;
+      const bevestigd = t.afgesprokenMetGast===true;
+      html += `<div style="background:var(--dh-sur);border:1.5px solid ${kleur}33;border-left:4px solid ${kleur};border-radius:10px;padding:14px 16px;margin-bottom:10px;cursor:pointer" onclick="openPoetsDetail('${t.id}')">
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="font-family:var(--disp);font-size:28px;font-weight:800;color:${kleur};width:52px;text-align:center;flex-shrink:0">${t.loftId}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-family:var(--disp);font-size:14px;font-weight:700;color:var(--dh-cream)">${t.titel}</div>
+            ${t.tijdVan?`<div style="font-size:10px;color:var(--dh-muted)">⏰ na ${t.tijdVan}${t.tijdTot?' · voor '+t.tijdTot:''}</div>`:''}
+            ${isTussVoorstel?'<span style="font-size:9px;background:rgba(160,120,200,.15);color:var(--dh-pur);border:1px solid rgba(160,120,200,.3);padding:1px 6px;border-radius:10px">Gast nog niet verwittigd</span>':''}
+            ${bevestigd?'<span style="font-size:9px;background:var(--dh-grn-l);color:var(--dh-grn);border:1px solid var(--dh-grn);padding:1px 6px;border-radius:10px;font-weight:700">✓ Gast verwittigd</span>':''}
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0">
+            <div style="font-size:11px;font-weight:800;padding:4px 12px;border-radius:20px;background:${kleur};color:${kleurTxt};white-space:nowrap">${datStr}</div>
+            ${isTussVoorstel?`<button onclick="event.stopPropagation();bevestigTussentijds('${t.id}')" style="background:rgba(160,120,200,.15);border:1.5px solid var(--dh-pur);border-radius:6px;padding:3px 9px;color:var(--dh-pur);font-size:10px;font-weight:700;cursor:pointer">✉ Gast verwittigd</button>`:''}
+            ${bevestigd&&t.bkId?`<button onclick="event.stopPropagation();wijzigTussentijdsDatum('${t.id}')" style="background:var(--dh-sur2);border:1px solid var(--dh-bdr);border-radius:6px;padding:3px 9px;color:var(--dh-muted);font-size:10px;cursor:pointer">✏ Datum</button>`:''}
+            <button onclick="event.stopPropagation();adminAfvinken('${t.id}')" style="background:var(--dh-grn-l);border:1.5px solid var(--dh-grn);border-radius:8px;padding:6px 14px;color:var(--dh-grn);font-size:11px;font-weight:700;cursor:pointer;min-height:36px">✓ Admin</button>
+          </div>
+        </div>
+      </div>`;
+    });
+  }
+
   if(gebundeld.length){
     html += sectionHeader('📋 Gebundelde taken', gebundeld.length, 'var(--dh-gold)');
     html += gebundeld.map(t=>_taakKaartGebundeld(t)).join('');
   }
-  if(enkelvoudig.length){
-    html += sectionHeader('📌 Enkelvoudige taken', enkelvoudig.length, 'var(--dh-blue)');
-    html += enkelvoudig.map(t=>_taakKaartEnkelvoudig(t, true)).join('');
+  if(overig.length){
+    html += sectionHeader('📌 Overige taken', overig.length, 'var(--dh-blue)');
+    html += overig.map(t=>_taakKaartEnkelvoudig(t, true)).join('');
   }
+  if(!html) html = '<div class="empty"><div class="empty-i">✅</div><div class="empty-t">Geen open taken</div></div>';
   el.innerHTML = html;
 }
 
@@ -7671,7 +7709,7 @@ function renderSchoonmaakTaken(el, niveaus){
     sortedBk.forEach((bk,idx)=>{
       const co = new Date(bk.checkOut); co.setHours(0,0,0,0);
       const diff = Math.round((co-today)/86400000);
-      if(diff > 14) return; // te ver weg
+      if(!isEigenaar && diff > 14) return; // te ver weg (schoonmaker ziet max 14 dagen vooruit)
       const stateKey = `poets_${l.id}_${bk.checkOut}`;
       if(db.clState?.[stateKey]) return; // al klaar
       // Controleer of er al een poets-taak in db.taken staat voor deze boeking
@@ -7725,7 +7763,7 @@ function renderSchoonmaakTaken(el, niveaus){
         const _isTussT = t.titel?.includes('Tussentijds');
         // Tussentijdse: nooit als toekomst (CI check zit al in filter)
         // Eindpoets en extras: toon tot 21 dagen vooraf
-        const isToekomst = _isTussT ? false : diffD > 21;
+        const isToekomst = isEigenaarView ? false : (_isTussT ? false : diffD > 21);
         const kleur = diffD<0?'var(--dh-red)':diffD===0?'var(--dh-red)':diffD<=1?'var(--dh-ora)':diffD<=7?'var(--dh-blue)':'var(--dh-sur3)';
         const kleurTxt = diffD<=1?'#fff':diffD<=7?'#fff':'var(--dh-muted)';
         const datStr = diffD<0?'Te laat':diffD===0?'Vandaag':diffD===1?'Morgen':fmtDate(t.datum||t.date);
