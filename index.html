@@ -1673,7 +1673,8 @@ function renderTaken(){
   const rolGroep = ROL_GROEP[actieveRol] || actieveRol;
 
   if(actieveRol === 'eigenaar'){
-    _renderEigenaarTaken(el);
+    // Eigenaar ziet de volledige schoonmaakview met admin-knoppen
+    renderSchoonmaakTaken(el, ['schoonmaak_n1','schoonmaak_n2']);
   } else if(rolGroep === 'schoonmaak' || actieveRol.startsWith('schoonmaak')){
     const niveaus = [actieveRol];
     renderSchoonmaakTaken(el, niveaus);
