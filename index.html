@@ -7764,6 +7764,7 @@ function renderSchoonmaakTaken(el, niveaus){
         const _isTussT = t.titel?.includes('Tussentijds');
         // Tussentijdse: nooit als toekomst (CI check zit al in filter)
         // Eindpoets en extras: toon tot 21 dagen vooraf
+        const isEigenaarView = curRole === 'eigenaar' || (curRole||'').startsWith('inspecteur'); // N1/N2 fix
         const isToekomst = isEigenaarView ? false : (_isTussT ? false : diffD > 21);
         const kleur = diffD<0?'var(--dh-red)':diffD===0?'var(--dh-red)':diffD<=1?'var(--dh-ora)':diffD<=7?'var(--dh-blue)':'var(--dh-sur3)';
         const kleurTxt = diffD<=1?'#fff':diffD<=7?'#fff':'var(--dh-muted)';
@@ -7774,7 +7775,7 @@ function renderSchoonmaakTaken(el, niveaus){
         const _datStr = isToekomst ? fmtDate(t.datum||t.date,true) : (diffD<0?'Te laat':diffD===0?'Vandaag':diffD===1?'Morgen':diffD<=7?fmtDate(t.datum||t.date,true):fmtDate(t.datum||t.date,true));
         const bevestigd2 = t.afgesprokenMetGast===true;
         const isTussVoorstel = t.bkId && t.afgesprokenMetGast===false && _isTussT;
-        const isEigenaarView = curRole === 'eigenaar' || (curRole||'').startsWith('inspecteur');
+        // isEigenaarView al gedeclareerd hierboven (N1/N2 fix)
         // Tussentijdse: altijd klikbaar als gast ingecheckt (filter zorgt al dat CO dag weg is)
         // isToekomst override: tuss is nooit "toekomst" als we hier zijn (filter heeft al CI check gedaan)
         html += `<div style="background:var(--dh-sur);border:1.5px solid ${kleur}33;border-left:4px solid ${kleur};border-radius:10px;padding:14px 16px;margin-bottom:10px;opacity:${isToekomst?'.6':'1'};cursor:${isToekomst?'default':'pointer'}" ${_onclick}>
