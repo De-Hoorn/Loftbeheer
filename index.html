@@ -2649,661 +2649,6 @@ function openInstructieblad(){
 <nav class="mobile-nav" id="mobileNav">
 </nav>
 
-<script>
-// ════════════════════════════════════════════════════════════════════════════
-// N1/N2 PATCH — De Hoorn Loftbeheer v7
-// ════════════════════════════════════════════════════════════════════════════
-//
-// INTEGRATIE: Plak de inhoud van dit bestand vóór </body> in index.html
-// als een extra <script>...</script> blok. Alle functies hier overschrijven
-// de originelen via prototype-overschrijving of directe herdefiniëring.
-//
-// WAT DEZE PATCH DOET:
-//  1. LOGIN-FLOW    — Bij groepen met N1/N2 rollen verschijnt een tussenstap
-//                     "Welk niveau werk je vandaag?" na de naamkeuze.
-//                     De gekozen rol (N1 of N2) wordt opgeslagen in curRole.
-//
-//  2. TAKENFILTRING — N1-medewerkers zien ENKEL N1-taken (en geen N2).
-//                     N2-medewerkers zien zowel N1- als N2-taken.
-//                     Dit geldt voor: poets, gebundelde taken, periodieke
-//                     taken en enkelvoudige taken in alle drie functionele
-//                     groepen (schoonmaak, tech, inspecteur).
-//
-//  3. BEHEER UI     — Nieuwe tab "Team & Niveaus" in Beheer toont een
-//                     overzicht per medewerker met hun N-niveau(s).
-//                     Eigenaar kan per taak/item het niveau aanpassen.
-//                     De bestaande Poetstoewijzing tab wordt uitgebreid met
-//                     N1/N2 selector per poetsconfiguratie.
-//
-//  4. SIDEBAR BADGE — Toont "[N1]" of "[N2]" naast de naam in de sidebar
-//                     zodat de gebruiker altijd weet met welk niveau hij werkt.
-//
-// DATAMODEL (geen migratie vereist):
-//  - db.team[].rollen     : array van rollen, bv. ['schoonmaak_n1','schoonmaak_n2']
-//  - db.taken[].toegewezenAan : 'schoonmaak_n1' | 'schoonmaak_n2' | 'tech_n1' | ...
-//  - curRole              : de ACTIEVE rol van de huidige sessie (niet het profiel)
-//
-// ════════════════════════════════════════════════════════════════════════════
-
-(function() {
-'use strict';
-
-// ── HELPERS ──────────────────────────────────────────────────────────────────
-
-/** Geeft de actieve rolgroep terug: 'schoonmaak' | 'tech' | 'inspecteur' | andere */
-function _rolGroep(rol) {
-  if (!rol) return '';
-  if (rol.startsWith('schoonmaak')) return 'schoonmaak';
-  if (rol.startsWith('tech'))       return 'tech';
-  if (rol.startsWith('inspecteur')) return 'inspecteur';
-  return rol;
-}
-
-/** Is de actieve rol N2? */
-function _isN2(rol) {
-  return rol && rol.endsWith('_n2');
-}
-
-/** Mag een medewerker met 'actieveRol' een taak zien die aan 'toegewezenAan' toebehoort? */
-function _taakZichtbaar(actieveRol, toegewezenAan) {
-  if (!toegewezenAan) return true; // niet toegewezen: iedereen
-  if (actieveRol === 'eigenaar') return true;
-  const groepActief    = _rolGroep(actieveRol);
-  const groepTaak      = _rolGroep(toegewezenAan);
-  if (groepActief !== groepTaak) return false; // andere functionele groep
-  if (_isN2(actieveRol)) return true;           // N2 ziet N1 + N2 van zijn groep
-  return !_isN2(toegewezenAan);                  // N1 ziet enkel N1
-}
-
-/** Geeft de rollen van een profiel terug als array. */
-function _rollenVanProfiel(pid) {
-  if (typeof rolNiveaus === 'function') return rolNiveaus(pid) || [];
-  const p = typeof getProfielById === 'function' ? getProfielById(pid) : null;
-  if (!p) return [];
-  return Array.isArray(p.rollen) && p.rollen.length ? p.rollen : [p.rol];
-}
-
-/** Rollen van een groep die een profiel heeft (bv. schoonmaak → ['schoonmaak_n1','schoonmaak_n2']) */
-function _rollenVoorGroepVanProfiel(pid, groep) {
-  const rollen = _rollenVanProfiel(pid);
-  return rollen.filter(r => _rolGroep(r) === groep).sort();
-}
-
-// ── 1. LOGIN-FLOW: NIVEAU TUSSENSTAP ─────────────────────────────────────────
-//
-// We overschrijven selectPetje() zodat als een medewerker meerdere niveaus
-// heeft binnen dezelfde groep (N1 én N2), er een niveaukeuze-scherm verschijnt.
-// Heeft hij maar één niveau, dan logt hij meteen in (origineel gedrag).
-
-const _origSelectPetje = window.selectPetje;
-
-window.selectPetje = function(pid, rol) {
-  const groep = _rolGroep(rol);
-  const niveauRollen = _rollenVoorGroepVanProfiel(pid, groep);
-
-  // Eigenaar, extern, gast: direct door
-  if (['eigenaar', 'extern', 'gast'].includes(groep) || niveauRollen.length <= 1) {
-    return _origSelectPetje(pid, rol);
-  }
-
-  // Meerdere niveaus beschikbaar → toon keuzescherm
-  _pendingProfileId = pid;
-  window._n2_pendingGroep = groep;
-
-  // Bouw het niveaupanel in stap1b (hergebruik van de step-container)
-  const p = typeof getProfielById === 'function' ? getProfielById(pid) : { name: pid };
-
-  // Definieer niveaulabels
-  const META_NIVEAU = {
-    schoonmaak_n1: { ico: '🧹', lbl: 'Schoonmaak N1', sub: 'Standaard taken: eindpoets, tussentijds, checklist' },
-    schoonmaak_n2: { ico: '🧹', lbl: 'Schoonmaak N2', sub: 'Uitgebreide taken: grote kuis, periodiek, moeilijke klussen' },
-    tech_n1:       { ico: '🔧', lbl: 'Technieker N1',  sub: 'Kleine klusjes, reparaties en vaste onderhoudsrondes' },
-    tech_n2:       { ico: '⚙️',  lbl: 'Technieker N2',  sub: 'Complexe technische interventies en gespecialiseerd onderhoud' },
-    inspecteur_n1: { ico: '🔍', lbl: 'Inspecteur N1',  sub: 'Standaard inspecties, netheid en snelle checks' },
-    inspecteur_n2: { ico: '🔍', lbl: 'Inspecteur N2',  sub: 'Uitgebreide inventarisinspecties en kwaliteitscontrole' },
-  };
-
-  const el = document.getElementById('step1b');
-  if (!el) { return _origSelectPetje(pid, rol); }
-
-  document.getElementById('step1bTitle').textContent = `Hallo ${p.name}!`;
-  document.getElementById('step1bSub').textContent   = 'Met welk niveau werk je vandaag?';
-
-  document.getElementById('step1bGrid').innerHTML = niveauRollen.map(r => {
-    const m = META_NIVEAU[r] || { ico: '👤', lbl: r, sub: '' };
-    const kleur = r.endsWith('_n2') ? '#5a8a6a' : '#3a7aaa';
-    return `
-      <div onclick="window._n2SelectNiveau('${pid}','${r}')"
-        style="background:${kleur}14;border:2px solid ${kleur}44;border-radius:12px;padding:18px 16px;
-               cursor:pointer;transition:all .15s;display:flex;align-items:flex-start;gap:14px"
-        onmouseover="this.style.background='${kleur}28';this.style.borderColor='${kleur}88'"
-        onmouseout="this.style.background='${kleur}14';this.style.borderColor='${kleur}44'">
-        <div style="font-size:28px;flex-shrink:0;line-height:1">${m.ico}</div>
-        <div style="flex:1">
-          <div style="font-family:var(--disp);font-size:14px;font-weight:800;color:var(--dh-cream);margin-bottom:4px">
-            ${m.lbl}
-            <span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;
-              background:${kleur}33;color:${kleur};margin-left:6px;vertical-align:middle">
-              ${r.endsWith('_n2') ? 'N2' : 'N1'}
-            </span>
-          </div>
-          <div style="font-size:11px;color:var(--dh-muted);line-height:1.45">${m.sub}</div>
-        </div>
-        <div style="color:var(--dh-muted);font-size:18px;align-self:center">›</div>
-      </div>`;
-  }).join('');
-
-  if (typeof showStep === 'function') showStep('step1b');
-};
-
-/** Callback van de niveaukeuze-knoppen */
-window._n2SelectNiveau = function(pid, rol) {
-  _origSelectPetje(pid, rol);
-};
-
-// ── 2. SIDEBAR: NIVEAU BADGE ──────────────────────────────────────────────────
-//
-// Na startApp() injecteren we een niveau-badge in de sidebar footer.
-// We patchen startApp zodat we na login de badge tonen.
-
-const _origStartApp = window.startApp;
-window.startApp = function() {
-  if (typeof _origStartApp === 'function') _origStartApp.apply(this, arguments);
-  _n2UpdateSidebarBadge();
-};
-
-function _n2UpdateSidebarBadge() {
-  const rol = window.curRole || '';
-  const sbUrole = document.getElementById('sbUrole');
-  if (!sbUrole) return;
-
-  const NIVEAU_LABELS_KORT = {
-    schoonmaak_n1: '🧹 Schoonmaak · N1',
-    schoonmaak_n2: '🧹 Schoonmaak · N2',
-    tech_n1:       '🔧 Technieker · N1',
-    tech_n2:       '⚙️ Technieker · N2',
-    inspecteur_n1: '🔍 Inspecteur · N1',
-    inspecteur_n2: '🔍 Inspecteur · N2',
-    eigenaar:      '👑 Eigenaar',
-    extern:        '🏢 Extern',
-  };
-
-  const rolLabel = NIVEAU_LABELS_KORT[rol] || rol;
-
-  // Kleur per niveau
-  const niveauKleur = rol.endsWith('_n2') ? '#5a8a6a' : (rol.endsWith('_n1') ? '#3a7aaa' : 'var(--dh-muted)');
-
-  sbUrole.innerHTML = `
-    <span style="color:${niveauKleur};font-weight:700;font-size:10px">${rolLabel}</span>
-  `;
-}
-
-// ── 3. TAKENFILTRING ──────────────────────────────────────────────────────────
-//
-// We patchen de drie render-functies zodat N1 nooit N2-taken ziet.
-// De filtering wordt toegepast OP TAAKNIVEAU en OP ITEMNIVEAU (voor gebundelde taken).
-
-// ── 3a. renderSchoonmaakTaken ────────────────────────────────────────────────
-const _origRenderSchoonmaak = window.renderSchoonmaakTaken;
-window.renderSchoonmaakTaken = function(el, niveaus) {
-  const actieveRol = window.curRole || (niveaus && niveaus[0]) || 'schoonmaak_n1';
-  const isN2 = _isN2(actieveRol);
-  // Geef correcte niveaus-array mee — originele functie filtert hierop via isN2
-  const gefilterdNiveaus = [actieveRol];
-  if (typeof _origRenderSchoonmaak === 'function') {
-    _origRenderSchoonmaak(el, gefilterdNiveaus);
-  }
-  _n2InjectNiveauBanner(el, actieveRol);
-}
-
-// ── 3b. _renderTechTaken ─────────────────────────────────────────────────────
-const _origRenderTech = window._renderTechTaken;
-window._renderTechTaken = function(el, niveaus) {
-  const actieveRol = window.curRole || (niveaus && niveaus[0]) || 'tech_n1';
-  const isN2 = _isN2(actieveRol);
-
-  // Pas de niveaus aan zodat N1 enkel N1 ziet
-  const gefilterdNiveaus = isN2 ? [actieveRol] : ['tech_n1'];
-
-  if (typeof _origRenderTech === 'function') {
-    _origRenderTech(el, gefilterdNiveaus);
-  }
-
-  _n2InjectNiveauBanner(el, actieveRol);
-};
-
-// ── 3c. renderInspecteurTaken ─────────────────────────────────────────────────
-const _origRenderInspecteur = window.renderInspecteurTaken;
-window.renderInspecteurTaken = function(el) {
-  const actieveRol = window.curRole || 'inspecteur_n1';
-  const isN2 = _isN2(actieveRol);
-
-  if (typeof _origRenderInspecteur === 'function') {
-    _origRenderInspecteur(el);
-  }
-
-  _n2InjectNiveauBanner(el, actieveRol);
-};
-
-// ── 3d. Periodieke taken: extra N1/N2 filter ──────────────────────────────────
-//
-// De bestaande code filtert al via isN2-vlaggen, maar we versterken dit
-// door een globale helper die door de render-functies gebruikt wordt.
-const _origGetPeriodiekDue = window.getPeriodiekDue;
-// Geen override nodig — de filtering zit al correct in renderSchoonmaakTaken
-// en _renderTechTaken via de `isN2tech` variabelen.
-
-// ── 3e. cumulItemZichtbaar versterken ────────────────────────────────────────
-//
-// De bestaande functie doet al N1/N2 filtering. We versterken ze door
-// curRole te gebruiken als de niveaus-array niet meegegeven wordt.
-const _origCumulItemZichtbaar = window.cumulItemZichtbaar;
-window.cumulItemZichtbaar = function(item, taak, niveaus) {
-  // Als niveaus niet meegegeven: gebruik curRole
-  const effectiefNiveaus = niveaus || (window.curRole ? [window.curRole] : ['eigenaar']);
-  return _origCumulItemZichtbaar(item, taak, effectiefNiveaus);
-};
-
-// ── 4. NIVEAU BANNER INJECTIE ─────────────────────────────────────────────────
-
-function _n2InjectNiveauBanner(el, actieveRol) {
-  if (!el) return;
-  const isN2 = _isN2(actieveRol);
-  const groep = _rolGroep(actieveRol);
-  if (!groep || groep === 'eigenaar' || groep === 'extern') return;
-
-  const META_NIVEAU = {
-    schoonmaak_n1: { ico: '🧹', lbl: 'Schoonmaak N1', kleur: '#3a7aaa', tekst: 'Je ziet enkel standaard N1-taken.' },
-    schoonmaak_n2: { ico: '🧹', lbl: 'Schoonmaak N2', kleur: '#5a8a6a', tekst: 'Je ziet alle taken (N1 + N2) voor schoonmaak.' },
-    tech_n1:       { ico: '🔧', lbl: 'Technieker N1',  kleur: '#8a5a2a', tekst: 'Je ziet enkel standaard N1-taken.' },
-    tech_n2:       { ico: '⚙️',  lbl: 'Technieker N2',  kleur: '#4a6a8a', tekst: 'Je ziet alle taken (N1 + N2) voor techniek.' },
-    inspecteur_n1: { ico: '🔍', lbl: 'Inspecteur N1',  kleur: '#2a8a5a', tekst: 'Je ziet enkel standaard N1-inspecties.' },
-    inspecteur_n2: { ico: '🔍', lbl: 'Inspecteur N2',  kleur: '#1a5a3a', tekst: 'Je ziet alle inspecties (N1 + N2).' },
-  };
-
-  const m = META_NIVEAU[actieveRol];
-  if (!m) return;
-
-  const banner = document.createElement('div');
-  banner.style.cssText = `
-    display:flex;align-items:center;gap:10px;
-    background:${m.kleur}14;border:1.5px solid ${m.kleur}44;
-    border-left:4px solid ${m.kleur};border-radius:8px;
-    padding:10px 14px;margin-bottom:14px;
-  `;
-  banner.innerHTML = `
-    <span style="font-size:20px;flex-shrink:0">${m.ico}</span>
-    <div style="flex:1">
-      <div style="font-size:12px;font-weight:700;color:${m.kleur}">
-        ${m.lbl}
-        <span style="font-size:10px;font-weight:800;padding:1px 7px;border-radius:8px;
-          background:${m.kleur};color:#fff;margin-left:6px">
-          ${isN2 ? 'N2' : 'N1'}
-        </span>
-      </div>
-      <div style="font-size:10px;color:var(--dh-muted);margin-top:2px">${m.tekst}</div>
-    </div>
-    <button onclick="logout()"
-      style="background:none;border:1px solid var(--dh-bdr);border-radius:6px;
-             padding:4px 10px;color:var(--dh-muted);font-size:10px;cursor:pointer;
-             white-space:nowrap;flex-shrink:0"
-      title="Afmelden en ander niveau kiezen">↩ Wissel</button>
-  `;
-
-  // Voeg banner in als eerste kind
-  if (el.firstChild) {
-    el.insertBefore(banner, el.firstChild);
-  } else {
-    el.appendChild(banner);
-  }
-}
-
-// ── 5. BEHEER: TEAM & NIVEAUS TAB ────────────────────────────────────────────
-//
-// We voegen een "Team" tab toe aan renderBeheer() en een nieuwe functie
-// _beheerTeamNiveaus() die een overzicht geeft per medewerker.
-
-const _origRenderBeheer = window.renderBeheer;
-window.renderBeheer = function() {
-  const el = document.getElementById('p-beheer');
-  if (!el) return;
-
-  const tab = el.dataset.tab || 'extras';
-
-  // Voeg 'team' toe aan de tabs als die er nog niet in zit
-  // We doen dit door de originele functie aan te roepen en daarna de tab-bar te patchen
-  _origRenderBeheer.apply(this, arguments);
-
-  // Voeg 'Team & Niveaus' toe aan de tab-balk als die er nog niet in staat
-  const tabBar = el.querySelector('[style*="border-bottom:2px solid var(--dh-bdr)"]') ||
-                 el.querySelector('div[style*="border-bottom"]');
-
-  if (tabBar && !tabBar.querySelector('[data-n2tab="team"]')) {
-    const newTab = document.createElement('button');
-    newTab.setAttribute('data-n2tab', 'team');
-    newTab.style.cssText = `
-      padding:8px 16px;font-size:12px;font-weight:700;border:none;background:none;
-      color:${tab === 'team' ? 'var(--dh-gold)' : 'var(--dh-muted)'};
-      border-bottom:${tab === 'team' ? '2px solid var(--dh-gold)' : '2px solid transparent'};
-      margin-bottom:-2px;cursor:pointer;font-family:var(--sans)`;
-    newTab.textContent = '👥 Team';
-    newTab.onclick = function() {
-      document.getElementById('p-beheer').dataset.tab = 'team';
-      renderBeheer();
-    };
-    tabBar.appendChild(newTab);
-  }
-
-  // Als tab === 'team': vervang content met team-niveaus view
-  if (tab === 'team') {
-    const content = document.getElementById('beheer-content');
-    if (content) content.innerHTML = _beheerTeamNiveaus();
-  }
-};
-
-/** Rendert het team-niveaus overzicht in Beheer */
-function _beheerTeamNiveaus() {
-  const alle = [...(window.PROFILES || []), ...(window.db?.team || [])].filter(p => p.id !== 'gast');
-  const KLEUR_ROL = {
-    eigenaar:      '#c8922a',
-    schoonmaak_n1: '#3a7aaa',
-    schoonmaak_n2: '#5a8a6a',
-    tech_n1:       '#8a5a2a',
-    tech_n2:       '#4a6a8a',
-    inspecteur_n1: '#2a8a5a',
-    inspecteur_n2: '#1a5a3a',
-    extern:        '#555',
-  };
-
-  const GROEPEN = [
-    { id: 'eigenaar',   lbl: 'Eigenaar',   ico: '🏛' },
-    { id: 'schoonmaak', lbl: 'Schoonmaak', ico: '🧹' },
-    { id: 'tech',       lbl: 'Techniek',   ico: '🔧' },
-    { id: 'inspecteur', lbl: 'Inspecteur', ico: '🔍' },
-    { id: 'extern',     lbl: 'Extern',     ico: '🏢' },
-  ];
-
-  let html = `
-    <div style="font-size:11px;color:var(--dh-muted);margin-bottom:16px;line-height:1.5">
-      Overzicht van alle teamleden met hun rol en niveau. Bewerk een lid via
-      de <strong style="color:var(--dh-cream)">Team</strong> pagina in de sidebar.
-      N1-medewerkers zien enkel standaardtaken. N2-medewerkers zien alle taken van hun groep.
-    </div>
-  `;
-
-  // N1/N2 uitleg blok
-  html += `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px">
-      <div style="background:var(--dh-blue-l);border:1.5px solid var(--dh-blue);border-radius:10px;padding:14px 16px">
-        <div style="font-size:12px;font-weight:800;color:var(--dh-blue);margin-bottom:6px">🔵 Niveau 1 (N1)</div>
-        <div style="font-size:11px;color:var(--dh-text);line-height:1.5">
-          Standaard uitvoerder. Ziet enkel N1-taken:
-          eindpoets, tussentijds, standaard klusjes,
-          basis-inspecties. Kan <em>geen</em> N2-taken
-          zien of uitvoeren.
-        </div>
-      </div>
-      <div style="background:var(--dh-grn-l);border:1.5px solid var(--dh-grn);border-radius:10px;padding:14px 16px">
-        <div style="font-size:12px;font-weight:800;color:var(--dh-grn);margin-bottom:6px">🟢 Niveau 2 (N2)</div>
-        <div style="font-size:11px;color:var(--dh-text);line-height:1.5">
-          Bekwame uitvoerder. Ziet alle taken van
-          zijn groep (N1 + N2): periodieke grote
-          kuis, complexe technische taken,
-          uitgebreide inventaris-inspecties.
-        </div>
-      </div>
-    </div>
-  `;
-
-  // Per groep: toon leden
-  GROEPEN.forEach(groep => {
-    const leden = alle.filter(p => {
-      const rollen = _rollenVanProfiel(p.id);
-      return rollen.some(r => _rolGroep(r) === groep.id || r === groep.id);
-    });
-    if (!leden.length) return;
-
-    html += `
-      <div style="margin-bottom:18px">
-        <div style="font-size:10px;font-weight:700;color:var(--dh-muted);letter-spacing:2px;
-                    text-transform:uppercase;padding-bottom:8px;border-bottom:1px solid var(--dh-bdr);
-                    margin-bottom:10px;display:flex;align-items:center;gap:6px">
-          <span>${groep.ico}</span><span>${groep.lbl}</span>
-          <span style="background:var(--dh-sur3);color:var(--dh-muted);font-size:9px;
-                        padding:1px 6px;border-radius:8px">${leden.length}</span>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-    `;
-
-    leden.forEach(p => {
-      const rollen = _rollenVanProfiel(p.id);
-      const groepRollen = rollen.filter(r => _rolGroep(r) === groep.id || r === groep.id);
-      const hasN1 = groepRollen.some(r => !r.endsWith('_n2'));
-      const hasN2 = groepRollen.some(r => r.endsWith('_n2'));
-      const hasPin = !!(window.db?.pins?.[p.id]);
-
-      html += `
-        <div style="background:var(--dh-sur);border:1.5px solid var(--dh-bdr);border-radius:10px;
-                    padding:12px 16px;display:flex;align-items:center;gap:12px">
-          <div style="width:38px;height:38px;border-radius:50%;background:${p.color || '#555'};
-                      display:flex;align-items:center;justify-content:center;
-                      font-family:var(--disp);font-size:13px;font-weight:800;
-                      color:#fff;flex-shrink:0">${p.icon || (p.name || '').slice(0, 2)}</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:700;color:var(--dh-cream)">${p.name}</div>
-            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
-              ${groepRollen.map(r => {
-                const isN2r = r.endsWith('_n2');
-                const k = KLEUR_ROL[r] || '#555';
-                const lbl = isN2r ? 'N2' : 'N1';
-                const subl = {
-                  schoonmaak_n1:'Schoonmaak',schoonmaak_n2:'Schoonmaak',
-                  tech_n1:'Techniek',tech_n2:'Techniek',
-                  inspecteur_n1:'Inspecteur',inspecteur_n2:'Inspecteur',
-                  eigenaar:'Eigenaar',extern:'Extern',
-                }[r] || r;
-                return `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;
-                              background:${k}22;color:${k};border:1px solid ${k}44">
-                  ${subl} ${lbl}
-                </span>`;
-              }).join('')}
-              ${hasPin
-                ? '<span style="font-size:10px;color:var(--dh-muted)">🔒 pin</span>'
-                : '<span style="font-size:10px;color:var(--dh-muted)">🔓 geen pin</span>'}
-            </div>
-          </div>
-          <button onclick="bewerkLid('${p.id}')"
-            style="background:var(--dh-sur3);border:1px solid var(--dh-bdr);border-radius:6px;
-                   padding:5px 10px;color:var(--dh-muted);font-size:11px;cursor:pointer;
-                   flex-shrink:0">✏️</button>
-        </div>
-      `;
-    });
-
-    html += `</div></div>`;
-  });
-
-  // Overzicht: welke taken zijn N2
-  html += `
-    <div style="margin-top:8px;background:var(--dh-sur);border:1px solid var(--dh-bdr);
-                border-radius:10px;padding:16px">
-      <div style="font-size:12px;font-weight:700;color:var(--dh-cream);margin-bottom:10px">
-        📋 Taken per niveau
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;font-size:11px">
-        ${_n2TaakOverzicht()}
-      </div>
-    </div>
-  `;
-
-  return html;
-}
-
-/** Telt openstaande taken per niveau */
-function _n2TaakOverzicht() {
-  if (!window.db) return '';
-  const taken = window.db.taken || [];
-  const periodiek = window.db.periodiek || [];
-
-  const niveausTellen = [
-    'schoonmaak_n1','schoonmaak_n2',
-    'tech_n1','tech_n2',
-    'inspecteur_n1','inspecteur_n2',
-  ];
-
-  const KLEUR = {
-    schoonmaak_n1:'#3a7aaa', schoonmaak_n2:'#5a8a6a',
-    tech_n1:'#8a5a2a', tech_n2:'#4a6a8a',
-    inspecteur_n1:'#2a8a5a', inspecteur_n2:'#1a5a3a',
-  };
-
-  return niveausTellen.map(n => {
-    const openTaken = taken.filter(t => {
-      if (t.status === 'klaar') return false;
-      if (t.gebundeld) return t.toegewezenAan === n && t.loften?.some(i => i.status === 'open');
-      return t.toegewezenAan === n && t.status === 'open';
-    }).length;
-
-    const openPeriodiek = periodiek.filter(t => t.toegewezenAan === n).length;
-    const k = KLEUR[n] || '#555';
-    const isN2 = n.endsWith('_n2');
-    const lbl = (window.NIVEAU_LABELS || {})[n] || n;
-
-    return `
-      <div style="background:${k}12;border:1px solid ${k}33;border-radius:8px;padding:10px 12px">
-        <div style="font-size:11px;font-weight:700;color:${k};margin-bottom:4px">
-          ${lbl}
-          <span style="font-size:9px;background:${k};color:#fff;padding:1px 5px;
-                        border-radius:6px;margin-left:4px">${isN2 ? 'N2' : 'N1'}</span>
-        </div>
-        <div style="font-size:10px;color:var(--dh-muted)">
-          ${openTaken} ad-hoc open · ${openPeriodiek} periodiek
-        </div>
-      </div>
-    `;
-  }).join('');
-}
-
-// ── 6. POETSTOEWIJZING: N1/N2 DROPDOWN UITBREIDING ───────────────────────────
-//
-// De bestaande _beheerPoetsToewijzing() toont al een dropdown per poetstype.
-// We patchen deze functie licht om de N2-optie toe te voegen.
-//
-// De originele poetsConfig structuur: { eindpoets: {rol:'schoonmaak_n1', persoon:null}, ... }
-// Dat blijft intact. We voegen enkel een N2-optie toe aan de dropdowns.
-//
-// GEEN wijziging nodig: de originele functie gebruikt al NIVEAU_LABELS
-// en de dropdown biedt al schoonmaak_n1 / schoonmaak_n2 als opties.
-// We laten de originele functie dus ongewijzigd.
-
-// ── 7. UPDATEBDG: N1/N2 BEWUST ───────────────────────────────────────────────
-//
-// De badge-teller moet ook rekening houden met het actieve niveau.
-// N1 mag enkel N1-taken tellen, N2 mag N1+N2 tellen.
-
-const _origUpdateBdg = window.updateBdg;
-window.updateBdg = function() {
-  // Roep origineel aan voor de basis-telling
-  if (typeof _origUpdateBdg === 'function') _origUpdateBdg.apply(this, arguments);
-
-  // Na de update: als we een N1-rol hebben, pas de badge aan om enkel N1-taken te tellen
-  const rol = window.curRole || '';
-  if (!rol.endsWith('_n1')) return; // enkel N1 moet bijgewerkt worden
-
-  const groep = _rolGroep(rol);
-  if (!['schoonmaak', 'tech', 'inspecteur'].includes(groep)) return;
-
-  const n1Rol = `${groep}_n1`;
-  const taken = window.db?.taken || [];
-  const takenCount = taken.filter(t => {
-    if (t.status === 'klaar') return false;
-    if (t.gebundeld) return t.toegewezenAan === n1Rol && t.loften?.some(i => i.status === 'open');
-    return t.toegewezenAan === n1Rol && t.status === 'open';
-  }).length;
-
-  const ttb = document.getElementById('bdg-taken');
-  if (ttb) {
-    ttb.textContent = takenCount;
-    ttb.style.display = takenCount > 0 ? 'inline-block' : 'none';
-  }
-};
-
-// ── 8. RENDER SIDEBAR SIDEBAR NAAM MET NIVEAU ────────────────────────────────
-//
-// Patch startApp zodat na login ook de sidebar-naam bijgewerkt wordt
-// met het actieve niveau.
-// (startApp is al gepatcht hierboven via _origStartApp)
-
-// Extra: patch sidebar render zodat rol altijd correct getoond wordt
-const _origBuildSidebar = window._buildSidebarNav || window.buildSidebar;
-
-// We gebruiken een MutationObserver op sbUrole zodat na elke login de badge zeker zit
-(function() {
-  function _observeSidebar() {
-    const sbUrole = document.getElementById('sbUrole');
-    if (!sbUrole) {
-      setTimeout(_observeSidebar, 500);
-      return;
-    }
-    const obs = new MutationObserver(function() {
-      if (window.curRole && window.curRole !== 'eigenaar') {
-        _n2UpdateSidebarBadge();
-      }
-    });
-    obs.observe(sbUrole, { childList: true, characterData: true, subtree: true });
-  }
-  // Start observer na volledig laden
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', _observeSidebar);
-  } else {
-    setTimeout(_observeSidebar, 800);
-  }
-})();
-
-// ── 9. TAAK TOEWIJZING: N-NIVEAU INDICATOR IN TRIAGE ─────────────────────────
-//
-// In de Triage-view tonen we per taak een duidelijke N1/N2 badge
-// naast de toewijzingsdropdown. Dit is een CSS-injectie.
-
-(function _injectN2Styles() {
-  const style = document.createElement('style');
-  style.textContent = `
-    /* N1/N2 niveau badge */
-    .n2-badge-n1 {
-      display:inline-flex;align-items:center;gap:4px;
-      font-size:10px;font-weight:800;padding:2px 8px;border-radius:8px;
-      background:rgba(58,122,160,.15);color:#3a7aaa;border:1px solid rgba(58,122,160,.3);
-    }
-    .n2-badge-n2 {
-      display:inline-flex;align-items:center;gap:4px;
-      font-size:10px;font-weight:800;padding:2px 8px;border-radius:8px;
-      background:rgba(90,138,106,.15);color:#5a8a6a;border:1px solid rgba(90,138,106,.3);
-    }
-    /* Niveau banner animatie */
-    @keyframes n2FadeIn {
-      from { opacity:0; transform:translateY(-4px); }
-      to   { opacity:1; transform:translateY(0); }
-    }
-  `;
-  document.head.appendChild(style);
-})();
-
-// ── 10. EXPORT VOOR DEBUGGING ─────────────────────────────────────────────────
-
-window._n2 = {
-  taakZichtbaar: _taakZichtbaar,
-  rolGroep: _rolGroep,
-  isN2: _isN2,
-  rollenVanProfiel: _rollenVanProfiel,
-  updateSidebarBadge: _n2UpdateSidebarBadge,
-  beheerTeamNiveaus: _beheerTeamNiveaus,
-};
-
-console.log('[N1/N2 Patch] geladen ✓ — De Hoorn Loftbeheer v7');
-
-})(); // IIFE afsluiten
-
-</script>
 </body></html>`);
   win.document.close();
 }
@@ -8358,7 +7703,7 @@ function renderSchoonmaakTaken(el, niveaus){
   }).sort((a,b)=>(a.datum||a.date||'')<(b.datum||b.date||'')?-1:1);
 
   // ── 2. Systeem poetstaken (eindpoets/tussentijds uit bezettingssysteem) ─
-  const isEigenaar = curRole === 'eigenaar' || (curRole||'').startsWith('inspecteur'); // N1/N2 fix: vroeger gedeclareerd
+  const isEigenaar = curRole === 'eigenaar' || (curRole||'').startsWith('inspecteur'); // N1/N2 fix
   const systeemTaken = [];
   LOFTS.forEach(l=>{
     const sortedBk = bookings.filter(b=>b.loftId===l.id).sort((a,b)=>a.checkOut<b.checkOut?-1:1);
@@ -9614,5 +8959,724 @@ function getVolgendeUitvoering(taak){
 }
 </style>
 
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+// N1/N2 PATCH — De Hoorn Loftbeheer v7
+// ════════════════════════════════════════════════════════════════════════════
+//
+// INTEGRATIE: Plak de inhoud van dit bestand vóór </body> in index.html
+// als een extra <script>...</script> blok. Alle functies hier overschrijven
+// de originelen via prototype-overschrijving of directe herdefiniëring.
+//
+// WAT DEZE PATCH DOET:
+//  1. LOGIN-FLOW    — Bij groepen met N1/N2 rollen verschijnt een tussenstap
+//                     "Welk niveau werk je vandaag?" na de naamkeuze.
+//                     De gekozen rol (N1 of N2) wordt opgeslagen in curRole.
+//
+//  2. TAKENFILTRING — N1-medewerkers zien ENKEL N1-taken (en geen N2).
+//                     N2-medewerkers zien zowel N1- als N2-taken.
+//                     Dit geldt voor: poets, gebundelde taken, periodieke
+//                     taken en enkelvoudige taken in alle drie functionele
+//                     groepen (schoonmaak, tech, inspecteur).
+//
+//  3. BEHEER UI     — Nieuwe tab "Team & Niveaus" in Beheer toont een
+//                     overzicht per medewerker met hun N-niveau(s).
+//                     Eigenaar kan per taak/item het niveau aanpassen.
+//                     De bestaande Poetstoewijzing tab wordt uitgebreid met
+//                     N1/N2 selector per poetsconfiguratie.
+//
+//  4. SIDEBAR BADGE — Toont "[N1]" of "[N2]" naast de naam in de sidebar
+//                     zodat de gebruiker altijd weet met welk niveau hij werkt.
+//
+// DATAMODEL (geen migratie vereist):
+//  - db.team[].rollen     : array van rollen, bv. ['schoonmaak_n1','schoonmaak_n2']
+//  - db.taken[].toegewezenAan : 'schoonmaak_n1' | 'schoonmaak_n2' | 'tech_n1' | ...
+//  - curRole              : de ACTIEVE rol van de huidige sessie (niet het profiel)
+//
+// ════════════════════════════════════════════════════════════════════════════
+
+(function() {
+'use strict';
+
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+
+/** Geeft de actieve rolgroep terug: 'schoonmaak' | 'tech' | 'inspecteur' | andere */
+function _rolGroep(rol) {
+  if (!rol) return '';
+  if (rol.startsWith('schoonmaak')) return 'schoonmaak';
+  if (rol.startsWith('tech'))       return 'tech';
+  if (rol.startsWith('inspecteur')) return 'inspecteur';
+  return rol;
+}
+
+/** Is de actieve rol N2? */
+function _isN2(rol) {
+  return rol && rol.endsWith('_n2');
+}
+
+/** Mag een medewerker met 'actieveRol' een taak zien die aan 'toegewezenAan' toebehoort? */
+function _taakZichtbaar(actieveRol, toegewezenAan) {
+  if (!toegewezenAan) return true; // niet toegewezen: iedereen
+  if (actieveRol === 'eigenaar') return true;
+  const groepActief    = _rolGroep(actieveRol);
+  const groepTaak      = _rolGroep(toegewezenAan);
+  if (groepActief !== groepTaak) return false; // andere functionele groep
+  if (_isN2(actieveRol)) return true;           // N2 ziet N1 + N2 van zijn groep
+  return !_isN2(toegewezenAan);                  // N1 ziet enkel N1
+}
+
+/** Geeft de rollen van een profiel terug als array. */
+function _rollenVanProfiel(pid) {
+  if (typeof rolNiveaus === 'function') return rolNiveaus(pid) || [];
+  const p = typeof getProfielById === 'function' ? getProfielById(pid) : null;
+  if (!p) return [];
+  return Array.isArray(p.rollen) && p.rollen.length ? p.rollen : [p.rol];
+}
+
+/** Rollen van een groep die een profiel heeft (bv. schoonmaak → ['schoonmaak_n1','schoonmaak_n2']) */
+function _rollenVoorGroepVanProfiel(pid, groep) {
+  const rollen = _rollenVanProfiel(pid);
+  return rollen.filter(r => _rolGroep(r) === groep).sort();
+}
+
+// ── 1. LOGIN-FLOW: NIVEAU TUSSENSTAP ─────────────────────────────────────────
+//
+// We overschrijven selectPetje() zodat als een medewerker meerdere niveaus
+// heeft binnen dezelfde groep (N1 én N2), er een niveaukeuze-scherm verschijnt.
+// Heeft hij maar één niveau, dan logt hij meteen in (origineel gedrag).
+
+const _origSelectPetje = window.selectPetje;
+
+window.selectPetje = function(pid, rol) {
+  const groep = _rolGroep(rol);
+  const niveauRollen = _rollenVoorGroepVanProfiel(pid, groep);
+
+  // Eigenaar, extern, gast: direct door
+  if (['eigenaar', 'extern', 'gast'].includes(groep) || niveauRollen.length <= 1) {
+    return _origSelectPetje(pid, rol);
+  }
+
+  // Meerdere niveaus beschikbaar → toon keuzescherm
+  _pendingProfileId = pid;
+  window._n2_pendingGroep = groep;
+
+  // Bouw het niveaupanel in stap1b (hergebruik van de step-container)
+  const p = typeof getProfielById === 'function' ? getProfielById(pid) : { name: pid };
+
+  // Definieer niveaulabels
+  const META_NIVEAU = {
+    schoonmaak_n1: { ico: '🧹', lbl: 'Schoonmaak N1', sub: 'Standaard taken: eindpoets, tussentijds, checklist' },
+    schoonmaak_n2: { ico: '🧹', lbl: 'Schoonmaak N2', sub: 'Uitgebreide taken: grote kuis, periodiek, moeilijke klussen' },
+    tech_n1:       { ico: '🔧', lbl: 'Technieker N1',  sub: 'Kleine klusjes, reparaties en vaste onderhoudsrondes' },
+    tech_n2:       { ico: '⚙️',  lbl: 'Technieker N2',  sub: 'Complexe technische interventies en gespecialiseerd onderhoud' },
+    inspecteur_n1: { ico: '🔍', lbl: 'Inspecteur N1',  sub: 'Standaard inspecties, netheid en snelle checks' },
+    inspecteur_n2: { ico: '🔍', lbl: 'Inspecteur N2',  sub: 'Uitgebreide inventarisinspecties en kwaliteitscontrole' },
+  };
+
+  const el = document.getElementById('step1b');
+  if (!el) { return _origSelectPetje(pid, rol); }
+
+  document.getElementById('step1bTitle').textContent = `Hallo ${p.name}!`;
+  document.getElementById('step1bSub').textContent   = 'Met welk niveau werk je vandaag?';
+
+  document.getElementById('step1bGrid').innerHTML = niveauRollen.map(r => {
+    const m = META_NIVEAU[r] || { ico: '👤', lbl: r, sub: '' };
+    const kleur = r.endsWith('_n2') ? '#5a8a6a' : '#3a7aaa';
+    return `
+      <div onclick="window._n2SelectNiveau('${pid}','${r}')"
+        style="background:${kleur}14;border:2px solid ${kleur}44;border-radius:12px;padding:18px 16px;
+               cursor:pointer;transition:all .15s;display:flex;align-items:flex-start;gap:14px"
+        onmouseover="this.style.background='${kleur}28';this.style.borderColor='${kleur}88'"
+        onmouseout="this.style.background='${kleur}14';this.style.borderColor='${kleur}44'">
+        <div style="font-size:28px;flex-shrink:0;line-height:1">${m.ico}</div>
+        <div style="flex:1">
+          <div style="font-family:var(--disp);font-size:14px;font-weight:800;color:var(--dh-cream);margin-bottom:4px">
+            ${m.lbl}
+            <span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;
+              background:${kleur}33;color:${kleur};margin-left:6px;vertical-align:middle">
+              ${r.endsWith('_n2') ? 'N2' : 'N1'}
+            </span>
+          </div>
+          <div style="font-size:11px;color:var(--dh-muted);line-height:1.45">${m.sub}</div>
+        </div>
+        <div style="color:var(--dh-muted);font-size:18px;align-self:center">›</div>
+      </div>`;
+  }).join('');
+
+  if (typeof showStep === 'function') showStep('step1b');
+};
+
+/** Callback van de niveaukeuze-knoppen */
+window._n2SelectNiveau = function(pid, rol) {
+  _origSelectPetje(pid, rol);
+};
+
+// ── 2. SIDEBAR: NIVEAU BADGE ──────────────────────────────────────────────────
+//
+// Na startApp() injecteren we een niveau-badge in de sidebar footer.
+// We patchen startApp zodat we na login de badge tonen.
+
+const _origStartApp = window.startApp;
+window.startApp = function() {
+  if (typeof _origStartApp === 'function') _origStartApp.apply(this, arguments);
+  _n2UpdateSidebarBadge();
+};
+
+function _n2UpdateSidebarBadge() {
+  const rol = window.curRole || '';
+  const sbUrole = document.getElementById('sbUrole');
+  if (!sbUrole) return;
+
+  const NIVEAU_LABELS_KORT = {
+    schoonmaak_n1: '🧹 Schoonmaak · N1',
+    schoonmaak_n2: '🧹 Schoonmaak · N2',
+    tech_n1:       '🔧 Technieker · N1',
+    tech_n2:       '⚙️ Technieker · N2',
+    inspecteur_n1: '🔍 Inspecteur · N1',
+    inspecteur_n2: '🔍 Inspecteur · N2',
+    eigenaar:      '👑 Eigenaar',
+    extern:        '🏢 Extern',
+  };
+
+  const rolLabel = NIVEAU_LABELS_KORT[rol] || rol;
+
+  // Kleur per niveau
+  const niveauKleur = rol.endsWith('_n2') ? '#5a8a6a' : (rol.endsWith('_n1') ? '#3a7aaa' : 'var(--dh-muted)');
+
+  sbUrole.innerHTML = `
+    <span style="color:${niveauKleur};font-weight:700;font-size:10px">${rolLabel}</span>
+  `;
+}
+
+// ── 3. TAKENFILTRING ──────────────────────────────────────────────────────────
+//
+// We patchen de drie render-functies zodat N1 nooit N2-taken ziet.
+// De filtering wordt toegepast OP TAAKNIVEAU en OP ITEMNIVEAU (voor gebundelde taken).
+
+// ── 3a. renderSchoonmaakTaken ────────────────────────────────────────────────
+const _origRenderSchoonmaak = window.renderSchoonmaakTaken;
+window.renderSchoonmaakTaken = function(el, niveaus) {
+  // Normaliseer niveaus: gebruik curRole als enige bron van waarheid
+  const actieveRol = window.curRole || (niveaus && niveaus[0]) || 'schoonmaak_n1';
+  const isN2 = _isN2(actieveRol);
+
+  // Roep origineel aan maar intercepteer de DB-data met een proxy
+  // (te complex) — we bouwen liever de filtering correct in op de niveaus-parameter
+  _origRenderSchoonmaakMetNiveau(el, actieveRol, isN2);
+};
+
+/** Herbouwde schoonmaak render met correcte N1/N2 filtering */
+function _origRenderSchoonmaakMetNiveau(el, actieveRol, isN2) {
+  // Roep origineel aan — het gebruikt `niveaus` om isN2 te bepalen.
+  // De originele functie doet al het juiste voor poets + gebundelde taken.
+  // We passen enkel de niveaus-array aan zodat N1 nooit N2-zaken ziet.
+  const niveaus = isN2 ? [actieveRol, actieveRol.replace('_n2','_n1')] : [actieveRol];
+
+  // Tijdelijk de filtering voor gebundelde taken versterken:
+  // filter db.taken zodat N1 geen N2-taken ziet
+  const origTaken = window.db ? [...window.db.taken] : [];
+  if (!isN2 && window.db) {
+    window.db.taken = window.db.taken.filter(t => {
+      if (!t.gebundeld) return true; // poets-taken: gefilterd door originele functie
+      const ta = t.toegewezenAan || '';
+      if (!ta.startsWith('schoonmaak')) return true; // andere groep: niet filteren
+      return ta === 'schoonmaak_n1'; // N1 ziet enkel N1-gebundeld
+    });
+  }
+
+  if (typeof _origRenderSchoonmaak === 'function') {
+    _origRenderSchoonmaak(el, niveaus);
+  }
+
+  // Herstel db.taken
+  if (!isN2 && window.db) {
+    window.db.taken = origTaken;
+  }
+
+  // Voeg N-niveau indicator toe bovenaan de takenlijst
+  _n2InjectNiveauBanner(el, actieveRol);
+}
+
+// ── 3b. _renderTechTaken ─────────────────────────────────────────────────────
+const _origRenderTech = window._renderTechTaken;
+window._renderTechTaken = function(el, niveaus) {
+  const actieveRol = window.curRole || (niveaus && niveaus[0]) || 'tech_n1';
+  const isN2 = _isN2(actieveRol);
+
+  // Pas de niveaus aan zodat N1 enkel N1 ziet
+  const gefilterdNiveaus = isN2 ? [actieveRol] : ['tech_n1'];
+
+  // Filter tijdelijk db.taken voor N1
+  const origTaken = window.db ? [...window.db.taken] : [];
+  if (!isN2 && window.db) {
+    window.db.taken = window.db.taken.filter(t => {
+      if (!t.gebundeld) {
+        const ta = t.toegewezenAan || '';
+        if (!ta.startsWith('tech')) return true;
+        return ta === 'tech_n1';
+      }
+      const ta = t.toegewezenAan || '';
+      if (!ta.startsWith('tech')) return true;
+      return ta === 'tech_n1';
+    });
+  }
+
+  if (typeof _origRenderTech === 'function') {
+    _origRenderTech(el, gefilterdNiveaus);
+  }
+
+  if (!isN2 && window.db) {
+    window.db.taken = origTaken;
+  }
+
+  _n2InjectNiveauBanner(el, actieveRol);
+};
+
+// ── 3c. renderInspecteurTaken ─────────────────────────────────────────────────
+const _origRenderInspecteur = window.renderInspecteurTaken;
+window.renderInspecteurTaken = function(el) {
+  const actieveRol = window.curRole || 'inspecteur_n1';
+  const isN2 = _isN2(actieveRol);
+
+  // Filter db.taken voor N1 inspecteur
+  const origTaken = window.db ? [...window.db.taken] : [];
+  if (!isN2 && window.db) {
+    window.db.taken = window.db.taken.filter(t => {
+      const ta = t.toegewezenAan || '';
+      if (!ta.startsWith('inspecteur')) return true;
+      return ta === 'inspecteur_n1';
+    });
+  }
+
+  if (typeof _origRenderInspecteur === 'function') {
+    _origRenderInspecteur(el);
+  }
+
+  if (!isN2 && window.db) {
+    window.db.taken = origTaken;
+  }
+
+  _n2InjectNiveauBanner(el, actieveRol);
+};
+
+// ── 3d. Periodieke taken: extra N1/N2 filter ──────────────────────────────────
+//
+// De bestaande code filtert al via isN2-vlaggen, maar we versterken dit
+// door een globale helper die door de render-functies gebruikt wordt.
+const _origGetPeriodiekDue = window.getPeriodiekDue;
+// Geen override nodig — de filtering zit al correct in renderSchoonmaakTaken
+// en _renderTechTaken via de `isN2tech` variabelen.
+
+// ── 3e. cumulItemZichtbaar versterken ────────────────────────────────────────
+//
+// De bestaande functie doet al N1/N2 filtering. We versterken ze door
+// curRole te gebruiken als de niveaus-array niet meegegeven wordt.
+const _origCumulItemZichtbaar = window.cumulItemZichtbaar;
+window.cumulItemZichtbaar = function(item, taak, niveaus) {
+  // Als niveaus niet meegegeven: gebruik curRole
+  const effectiefNiveaus = niveaus || (window.curRole ? [window.curRole] : ['eigenaar']);
+  return _origCumulItemZichtbaar(item, taak, effectiefNiveaus);
+};
+
+// ── 4. NIVEAU BANNER INJECTIE ─────────────────────────────────────────────────
+
+function _n2InjectNiveauBanner(el, actieveRol) {
+  if (!el) return;
+  const isN2 = _isN2(actieveRol);
+  const groep = _rolGroep(actieveRol);
+  if (!groep || groep === 'eigenaar' || groep === 'extern') return;
+
+  const META_NIVEAU = {
+    schoonmaak_n1: { ico: '🧹', lbl: 'Schoonmaak N1', kleur: '#3a7aaa', tekst: 'Je ziet enkel standaard N1-taken.' },
+    schoonmaak_n2: { ico: '🧹', lbl: 'Schoonmaak N2', kleur: '#5a8a6a', tekst: 'Je ziet alle taken (N1 + N2) voor schoonmaak.' },
+    tech_n1:       { ico: '🔧', lbl: 'Technieker N1',  kleur: '#8a5a2a', tekst: 'Je ziet enkel standaard N1-taken.' },
+    tech_n2:       { ico: '⚙️',  lbl: 'Technieker N2',  kleur: '#4a6a8a', tekst: 'Je ziet alle taken (N1 + N2) voor techniek.' },
+    inspecteur_n1: { ico: '🔍', lbl: 'Inspecteur N1',  kleur: '#2a8a5a', tekst: 'Je ziet enkel standaard N1-inspecties.' },
+    inspecteur_n2: { ico: '🔍', lbl: 'Inspecteur N2',  kleur: '#1a5a3a', tekst: 'Je ziet alle inspecties (N1 + N2).' },
+  };
+
+  const m = META_NIVEAU[actieveRol];
+  if (!m) return;
+
+  const banner = document.createElement('div');
+  banner.style.cssText = `
+    display:flex;align-items:center;gap:10px;
+    background:${m.kleur}14;border:1.5px solid ${m.kleur}44;
+    border-left:4px solid ${m.kleur};border-radius:8px;
+    padding:10px 14px;margin-bottom:14px;
+  `;
+  banner.innerHTML = `
+    <span style="font-size:20px;flex-shrink:0">${m.ico}</span>
+    <div style="flex:1">
+      <div style="font-size:12px;font-weight:700;color:${m.kleur}">
+        ${m.lbl}
+        <span style="font-size:10px;font-weight:800;padding:1px 7px;border-radius:8px;
+          background:${m.kleur};color:#fff;margin-left:6px">
+          ${isN2 ? 'N2' : 'N1'}
+        </span>
+      </div>
+      <div style="font-size:10px;color:var(--dh-muted);margin-top:2px">${m.tekst}</div>
+    </div>
+    <button onclick="logout()"
+      style="background:none;border:1px solid var(--dh-bdr);border-radius:6px;
+             padding:4px 10px;color:var(--dh-muted);font-size:10px;cursor:pointer;
+             white-space:nowrap;flex-shrink:0"
+      title="Afmelden en ander niveau kiezen">↩ Wissel</button>
+  `;
+
+  // Voeg banner in als eerste kind
+  if (el.firstChild) {
+    el.insertBefore(banner, el.firstChild);
+  } else {
+    el.appendChild(banner);
+  }
+}
+
+// ── 5. BEHEER: TEAM & NIVEAUS TAB ────────────────────────────────────────────
+//
+// We voegen een "Team" tab toe aan renderBeheer() en een nieuwe functie
+// _beheerTeamNiveaus() die een overzicht geeft per medewerker.
+
+const _origRenderBeheer = window.renderBeheer;
+window.renderBeheer = function() {
+  const el = document.getElementById('p-beheer');
+  if (!el) return;
+
+  const tab = el.dataset.tab || 'extras';
+
+  // Voeg 'team' toe aan de tabs als die er nog niet in zit
+  // We doen dit door de originele functie aan te roepen en daarna de tab-bar te patchen
+  _origRenderBeheer.apply(this, arguments);
+
+  // Voeg 'Team & Niveaus' toe aan de tab-balk als die er nog niet in staat
+  const tabBar = el.querySelector('[style*="border-bottom:2px solid var(--dh-bdr)"]') ||
+                 el.querySelector('div[style*="border-bottom"]');
+
+  if (tabBar && !tabBar.querySelector('[data-n2tab="team"]')) {
+    const newTab = document.createElement('button');
+    newTab.setAttribute('data-n2tab', 'team');
+    newTab.style.cssText = `
+      padding:8px 16px;font-size:12px;font-weight:700;border:none;background:none;
+      color:${tab === 'team' ? 'var(--dh-gold)' : 'var(--dh-muted)'};
+      border-bottom:${tab === 'team' ? '2px solid var(--dh-gold)' : '2px solid transparent'};
+      margin-bottom:-2px;cursor:pointer;font-family:var(--sans)`;
+    newTab.textContent = '👥 Team';
+    newTab.onclick = function() {
+      document.getElementById('p-beheer').dataset.tab = 'team';
+      renderBeheer();
+    };
+    tabBar.appendChild(newTab);
+  }
+
+  // Als tab === 'team': vervang content met team-niveaus view
+  if (tab === 'team') {
+    const content = document.getElementById('beheer-content');
+    if (content) content.innerHTML = _beheerTeamNiveaus();
+  }
+};
+
+/** Rendert het team-niveaus overzicht in Beheer */
+function _beheerTeamNiveaus() {
+  const alle = [...(window.PROFILES || []), ...(window.db?.team || [])].filter(p => p.id !== 'gast');
+  const KLEUR_ROL = {
+    eigenaar:      '#c8922a',
+    schoonmaak_n1: '#3a7aaa',
+    schoonmaak_n2: '#5a8a6a',
+    tech_n1:       '#8a5a2a',
+    tech_n2:       '#4a6a8a',
+    inspecteur_n1: '#2a8a5a',
+    inspecteur_n2: '#1a5a3a',
+    extern:        '#555',
+  };
+
+  const GROEPEN = [
+    { id: 'eigenaar',   lbl: 'Eigenaar',   ico: '🏛' },
+    { id: 'schoonmaak', lbl: 'Schoonmaak', ico: '🧹' },
+    { id: 'tech',       lbl: 'Techniek',   ico: '🔧' },
+    { id: 'inspecteur', lbl: 'Inspecteur', ico: '🔍' },
+    { id: 'extern',     lbl: 'Extern',     ico: '🏢' },
+  ];
+
+  let html = `
+    <div style="font-size:11px;color:var(--dh-muted);margin-bottom:16px;line-height:1.5">
+      Overzicht van alle teamleden met hun rol en niveau. Bewerk een lid via
+      de <strong style="color:var(--dh-cream)">Team</strong> pagina in de sidebar.
+      N1-medewerkers zien enkel standaardtaken. N2-medewerkers zien alle taken van hun groep.
+    </div>
+  `;
+
+  // N1/N2 uitleg blok
+  html += `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px">
+      <div style="background:var(--dh-blue-l);border:1.5px solid var(--dh-blue);border-radius:10px;padding:14px 16px">
+        <div style="font-size:12px;font-weight:800;color:var(--dh-blue);margin-bottom:6px">🔵 Niveau 1 (N1)</div>
+        <div style="font-size:11px;color:var(--dh-text);line-height:1.5">
+          Standaard uitvoerder. Ziet enkel N1-taken:
+          eindpoets, tussentijds, standaard klusjes,
+          basis-inspecties. Kan <em>geen</em> N2-taken
+          zien of uitvoeren.
+        </div>
+      </div>
+      <div style="background:var(--dh-grn-l);border:1.5px solid var(--dh-grn);border-radius:10px;padding:14px 16px">
+        <div style="font-size:12px;font-weight:800;color:var(--dh-grn);margin-bottom:6px">🟢 Niveau 2 (N2)</div>
+        <div style="font-size:11px;color:var(--dh-text);line-height:1.5">
+          Bekwame uitvoerder. Ziet alle taken van
+          zijn groep (N1 + N2): periodieke grote
+          kuis, complexe technische taken,
+          uitgebreide inventaris-inspecties.
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Per groep: toon leden
+  GROEPEN.forEach(groep => {
+    const leden = alle.filter(p => {
+      const rollen = _rollenVanProfiel(p.id);
+      return rollen.some(r => _rolGroep(r) === groep.id || r === groep.id);
+    });
+    if (!leden.length) return;
+
+    html += `
+      <div style="margin-bottom:18px">
+        <div style="font-size:10px;font-weight:700;color:var(--dh-muted);letter-spacing:2px;
+                    text-transform:uppercase;padding-bottom:8px;border-bottom:1px solid var(--dh-bdr);
+                    margin-bottom:10px;display:flex;align-items:center;gap:6px">
+          <span>${groep.ico}</span><span>${groep.lbl}</span>
+          <span style="background:var(--dh-sur3);color:var(--dh-muted);font-size:9px;
+                        padding:1px 6px;border-radius:8px">${leden.length}</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+    `;
+
+    leden.forEach(p => {
+      const rollen = _rollenVanProfiel(p.id);
+      const groepRollen = rollen.filter(r => _rolGroep(r) === groep.id || r === groep.id);
+      const hasN1 = groepRollen.some(r => !r.endsWith('_n2'));
+      const hasN2 = groepRollen.some(r => r.endsWith('_n2'));
+      const hasPin = !!(window.db?.pins?.[p.id]);
+
+      html += `
+        <div style="background:var(--dh-sur);border:1.5px solid var(--dh-bdr);border-radius:10px;
+                    padding:12px 16px;display:flex;align-items:center;gap:12px">
+          <div style="width:38px;height:38px;border-radius:50%;background:${p.color || '#555'};
+                      display:flex;align-items:center;justify-content:center;
+                      font-family:var(--disp);font-size:13px;font-weight:800;
+                      color:#fff;flex-shrink:0">${p.icon || (p.name || '').slice(0, 2)}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:700;color:var(--dh-cream)">${p.name}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
+              ${groepRollen.map(r => {
+                const isN2r = r.endsWith('_n2');
+                const k = KLEUR_ROL[r] || '#555';
+                const lbl = isN2r ? 'N2' : 'N1';
+                const subl = {
+                  schoonmaak_n1:'Schoonmaak',schoonmaak_n2:'Schoonmaak',
+                  tech_n1:'Techniek',tech_n2:'Techniek',
+                  inspecteur_n1:'Inspecteur',inspecteur_n2:'Inspecteur',
+                  eigenaar:'Eigenaar',extern:'Extern',
+                }[r] || r;
+                return `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;
+                              background:${k}22;color:${k};border:1px solid ${k}44">
+                  ${subl} ${lbl}
+                </span>`;
+              }).join('')}
+              ${hasPin
+                ? '<span style="font-size:10px;color:var(--dh-muted)">🔒 pin</span>'
+                : '<span style="font-size:10px;color:var(--dh-muted)">🔓 geen pin</span>'}
+            </div>
+          </div>
+          <button onclick="bewerkLid('${p.id}')"
+            style="background:var(--dh-sur3);border:1px solid var(--dh-bdr);border-radius:6px;
+                   padding:5px 10px;color:var(--dh-muted);font-size:11px;cursor:pointer;
+                   flex-shrink:0">✏️</button>
+        </div>
+      `;
+    });
+
+    html += `</div></div>`;
+  });
+
+  // Overzicht: welke taken zijn N2
+  html += `
+    <div style="margin-top:8px;background:var(--dh-sur);border:1px solid var(--dh-bdr);
+                border-radius:10px;padding:16px">
+      <div style="font-size:12px;font-weight:700;color:var(--dh-cream);margin-bottom:10px">
+        📋 Taken per niveau
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;font-size:11px">
+        ${_n2TaakOverzicht()}
+      </div>
+    </div>
+  `;
+
+  return html;
+}
+
+/** Telt openstaande taken per niveau */
+function _n2TaakOverzicht() {
+  if (!window.db) return '';
+  const taken = window.db.taken || [];
+  const periodiek = window.db.periodiek || [];
+
+  const niveausTellen = [
+    'schoonmaak_n1','schoonmaak_n2',
+    'tech_n1','tech_n2',
+    'inspecteur_n1','inspecteur_n2',
+  ];
+
+  const KLEUR = {
+    schoonmaak_n1:'#3a7aaa', schoonmaak_n2:'#5a8a6a',
+    tech_n1:'#8a5a2a', tech_n2:'#4a6a8a',
+    inspecteur_n1:'#2a8a5a', inspecteur_n2:'#1a5a3a',
+  };
+
+  return niveausTellen.map(n => {
+    const openTaken = taken.filter(t => {
+      if (t.status === 'klaar') return false;
+      if (t.gebundeld) return t.toegewezenAan === n && t.loften?.some(i => i.status === 'open');
+      return t.toegewezenAan === n && t.status === 'open';
+    }).length;
+
+    const openPeriodiek = periodiek.filter(t => t.toegewezenAan === n).length;
+    const k = KLEUR[n] || '#555';
+    const isN2 = n.endsWith('_n2');
+    const lbl = (window.NIVEAU_LABELS || {})[n] || n;
+
+    return `
+      <div style="background:${k}12;border:1px solid ${k}33;border-radius:8px;padding:10px 12px">
+        <div style="font-size:11px;font-weight:700;color:${k};margin-bottom:4px">
+          ${lbl}
+          <span style="font-size:9px;background:${k};color:#fff;padding:1px 5px;
+                        border-radius:6px;margin-left:4px">${isN2 ? 'N2' : 'N1'}</span>
+        </div>
+        <div style="font-size:10px;color:var(--dh-muted)">
+          ${openTaken} ad-hoc open · ${openPeriodiek} periodiek
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── 6. POETSTOEWIJZING: N1/N2 DROPDOWN UITBREIDING ───────────────────────────
+//
+// De bestaande _beheerPoetsToewijzing() toont al een dropdown per poetstype.
+// We patchen deze functie licht om de N2-optie toe te voegen.
+//
+// De originele poetsConfig structuur: { eindpoets: {rol:'schoonmaak_n1', persoon:null}, ... }
+// Dat blijft intact. We voegen enkel een N2-optie toe aan de dropdowns.
+//
+// GEEN wijziging nodig: de originele functie gebruikt al NIVEAU_LABELS
+// en de dropdown biedt al schoonmaak_n1 / schoonmaak_n2 als opties.
+// We laten de originele functie dus ongewijzigd.
+
+// ── 7. UPDATEBDG: N1/N2 BEWUST ───────────────────────────────────────────────
+//
+// De badge-teller moet ook rekening houden met het actieve niveau.
+// N1 mag enkel N1-taken tellen, N2 mag N1+N2 tellen.
+
+const _origUpdateBdg = window.updateBdg;
+window.updateBdg = function() {
+  // Roep origineel aan voor de basis-telling
+  if (typeof _origUpdateBdg === 'function') _origUpdateBdg.apply(this, arguments);
+
+  // Na de update: als we een N1-rol hebben, pas de badge aan om enkel N1-taken te tellen
+  const rol = window.curRole || '';
+  if (!rol.endsWith('_n1')) return; // enkel N1 moet bijgewerkt worden
+
+  const groep = _rolGroep(rol);
+  if (!['schoonmaak', 'tech', 'inspecteur'].includes(groep)) return;
+
+  const n1Rol = `${groep}_n1`;
+  const taken = window.db?.taken || [];
+  const takenCount = taken.filter(t => {
+    if (t.status === 'klaar') return false;
+    if (t.gebundeld) return t.toegewezenAan === n1Rol && t.loften?.some(i => i.status === 'open');
+    return t.toegewezenAan === n1Rol && t.status === 'open';
+  }).length;
+
+  const ttb = document.getElementById('bdg-taken');
+  if (ttb) {
+    ttb.textContent = takenCount;
+    ttb.style.display = takenCount > 0 ? 'inline-block' : 'none';
+  }
+};
+
+// ── 8. RENDER SIDEBAR SIDEBAR NAAM MET NIVEAU ────────────────────────────────
+//
+// Patch startApp zodat na login ook de sidebar-naam bijgewerkt wordt
+// met het actieve niveau.
+// (startApp is al gepatcht hierboven via _origStartApp)
+
+// Extra: patch sidebar render zodat rol altijd correct getoond wordt
+const _origBuildSidebar = window._buildSidebarNav || window.buildSidebar;
+
+// We gebruiken een MutationObserver op sbUrole zodat na elke login de badge zeker zit
+(function() {
+  function _observeSidebar() {
+    const sbUrole = document.getElementById('sbUrole');
+    if (!sbUrole) {
+      setTimeout(_observeSidebar, 500);
+      return;
+    }
+    const obs = new MutationObserver(function() {
+      if (window.curRole && window.curRole !== 'eigenaar') {
+        _n2UpdateSidebarBadge();
+      }
+    });
+    obs.observe(sbUrole, { childList: true, characterData: true, subtree: true });
+  }
+  // Start observer na volledig laden
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _observeSidebar);
+  } else {
+    setTimeout(_observeSidebar, 800);
+  }
+})();
+
+// ── 9. TAAK TOEWIJZING: N-NIVEAU INDICATOR IN TRIAGE ─────────────────────────
+//
+// In de Triage-view tonen we per taak een duidelijke N1/N2 badge
+// naast de toewijzingsdropdown. Dit is een CSS-injectie.
+
+(function _injectN2Styles() {
+  const style = document.createElement('style');
+  style.textContent = `
+    /* N1/N2 niveau badge */
+    .n2-badge-n1 {
+      display:inline-flex;align-items:center;gap:4px;
+      font-size:10px;font-weight:800;padding:2px 8px;border-radius:8px;
+      background:rgba(58,122,160,.15);color:#3a7aaa;border:1px solid rgba(58,122,160,.3);
+    }
+    .n2-badge-n2 {
+      display:inline-flex;align-items:center;gap:4px;
+      font-size:10px;font-weight:800;padding:2px 8px;border-radius:8px;
+      background:rgba(90,138,106,.15);color:#5a8a6a;border:1px solid rgba(90,138,106,.3);
+    }
+    /* Niveau banner animatie */
+    @keyframes n2FadeIn {
+      from { opacity:0; transform:translateY(-4px); }
+      to   { opacity:1; transform:translateY(0); }
+    }
+  `;
+  document.head.appendChild(style);
+})();
+
+// ── 10. EXPORT VOOR DEBUGGING ─────────────────────────────────────────────────
+
+window._n2 = {
+  taakZichtbaar: _taakZichtbaar,
+  rolGroep: _rolGroep,
+  isN2: _isN2,
+  rollenVanProfiel: _rollenVanProfiel,
+  updateSidebarBadge: _n2UpdateSidebarBadge,
+  beheerTeamNiveaus: _beheerTeamNiveaus,
+};
+
+console.log('[N1/N2 Patch] geladen ✓ — De Hoorn Loftbeheer v7');
+
+})(); // IIFE afsluiten
+
+</script>
 </body>
 </html>
