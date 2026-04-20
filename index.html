@@ -2846,44 +2846,13 @@ function _n2UpdateSidebarBadge() {
 // ── 3a. renderSchoonmaakTaken ────────────────────────────────────────────────
 const _origRenderSchoonmaak = window.renderSchoonmaakTaken;
 window.renderSchoonmaakTaken = function(el, niveaus) {
-  // Normaliseer niveaus: gebruik curRole als enige bron van waarheid
   const actieveRol = window.curRole || (niveaus && niveaus[0]) || 'schoonmaak_n1';
   const isN2 = _isN2(actieveRol);
-
-  // Roep origineel aan maar intercepteer de DB-data met een proxy
-  // (te complex) — we bouwen liever de filtering correct in op de niveaus-parameter
-  _origRenderSchoonmaakMetNiveau(el, actieveRol, isN2);
-};
-
-/** Herbouwde schoonmaak render met correcte N1/N2 filtering */
-function _origRenderSchoonmaakMetNiveau(el, actieveRol, isN2) {
-  // Roep origineel aan — het gebruikt `niveaus` om isN2 te bepalen.
-  // De originele functie doet al het juiste voor poets + gebundelde taken.
-  // We passen enkel de niveaus-array aan zodat N1 nooit N2-zaken ziet.
-  const niveaus = isN2 ? [actieveRol, actieveRol.replace('_n2','_n1')] : [actieveRol];
-
-  // Tijdelijk de filtering voor gebundelde taken versterken:
-  // filter db.taken zodat N1 geen N2-taken ziet
-  const origTaken = window.db ? [...window.db.taken] : [];
-  if (!isN2 && window.db) {
-    window.db.taken = window.db.taken.filter(t => {
-      if (!t.gebundeld) return true; // poets-taken: gefilterd door originele functie
-      const ta = t.toegewezenAan || '';
-      if (!ta.startsWith('schoonmaak')) return true; // andere groep: niet filteren
-      return ta === 'schoonmaak_n1'; // N1 ziet enkel N1-gebundeld
-    });
-  }
-
+  // Geef correcte niveaus-array mee — originele functie filtert hierop via isN2
+  const gefilterdNiveaus = [actieveRol];
   if (typeof _origRenderSchoonmaak === 'function') {
-    _origRenderSchoonmaak(el, niveaus);
+    _origRenderSchoonmaak(el, gefilterdNiveaus);
   }
-
-  // Herstel db.taken
-  if (!isN2 && window.db) {
-    window.db.taken = origTaken;
-  }
-
-  // Voeg N-niveau indicator toe bovenaan de takenlijst
   _n2InjectNiveauBanner(el, actieveRol);
 }
 
@@ -2896,27 +2865,8 @@ window._renderTechTaken = function(el, niveaus) {
   // Pas de niveaus aan zodat N1 enkel N1 ziet
   const gefilterdNiveaus = isN2 ? [actieveRol] : ['tech_n1'];
 
-  // Filter tijdelijk db.taken voor N1
-  const origTaken = window.db ? [...window.db.taken] : [];
-  if (!isN2 && window.db) {
-    window.db.taken = window.db.taken.filter(t => {
-      if (!t.gebundeld) {
-        const ta = t.toegewezenAan || '';
-        if (!ta.startsWith('tech')) return true;
-        return ta === 'tech_n1';
-      }
-      const ta = t.toegewezenAan || '';
-      if (!ta.startsWith('tech')) return true;
-      return ta === 'tech_n1';
-    });
-  }
-
   if (typeof _origRenderTech === 'function') {
     _origRenderTech(el, gefilterdNiveaus);
-  }
-
-  if (!isN2 && window.db) {
-    window.db.taken = origTaken;
   }
 
   _n2InjectNiveauBanner(el, actieveRol);
@@ -2928,22 +2878,8 @@ window.renderInspecteurTaken = function(el) {
   const actieveRol = window.curRole || 'inspecteur_n1';
   const isN2 = _isN2(actieveRol);
 
-  // Filter db.taken voor N1 inspecteur
-  const origTaken = window.db ? [...window.db.taken] : [];
-  if (!isN2 && window.db) {
-    window.db.taken = window.db.taken.filter(t => {
-      const ta = t.toegewezenAan || '';
-      if (!ta.startsWith('inspecteur')) return true;
-      return ta === 'inspecteur_n1';
-    });
-  }
-
   if (typeof _origRenderInspecteur === 'function') {
     _origRenderInspecteur(el);
-  }
-
-  if (!isN2 && window.db) {
-    window.db.taken = origTaken;
   }
 
   _n2InjectNiveauBanner(el, actieveRol);
@@ -8422,6 +8358,7 @@ function renderSchoonmaakTaken(el, niveaus){
   }).sort((a,b)=>(a.datum||a.date||'')<(b.datum||b.date||'')?-1:1);
 
   // ── 2. Systeem poetstaken (eindpoets/tussentijds uit bezettingssysteem) ─
+  const isEigenaar = curRole === 'eigenaar' || (curRole||'').startsWith('inspecteur'); // N1/N2 fix: vroeger gedeclareerd
   const systeemTaken = [];
   LOFTS.forEach(l=>{
     const sortedBk = bookings.filter(b=>b.loftId===l.id).sort((a,b)=>a.checkOut<b.checkOut?-1:1);
@@ -8444,7 +8381,7 @@ function renderSchoonmaakTaken(el, niveaus){
   });
 
   // ── Tussentijdse: schoonmaker ziet enkel eerstvolgende per boeking ──────
-  const isEigenaar = curRole === 'eigenaar' || (curRole||'').startsWith('inspecteur');
+  // isEigenaar al gedeclareerd hierboven (N1/N2 fix)
   let poetsTakenGefilterd = poetsTaken;
   if(!isEigenaar){
     // Per bkId: enkel de tussentijdse taak met de vroegste datum tonen
