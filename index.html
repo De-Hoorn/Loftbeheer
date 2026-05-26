@@ -2230,125 +2230,175 @@ function openPrintPlanning(){
 
 function renderPrintPlanning(){
   const today = new Date(); today.setHours(0,0,0,0);
-  const dagen = [];
-  for(let i=0;i<14;i++){
-    const d = new Date(today); d.setDate(today.getDate()+i);
-    dagen.push(d);
-  }
+  const todayStr = dateToStr(today);
 
-  // Bouw alle poetstaken voor de komende 14 dagen
+  // ── Bouw takenlijst vanuit db.taken (zelfde bron als schoonmaakview) ──────
+  // Dit garandeert dat de print identiek is aan wat de schoonmaker ziet.
   const taken = [];
-  LOFTS.forEach(l=>{
-    const sortedBk = bookings.filter(b=>b.loftId===l.id).sort((a,b)=>a.checkOut<b.checkOut?-1:1);
-    sortedBk.forEach((bk,idx)=>{
-      const co = new Date(bk.checkOut); co.setHours(0,0,0,0);
-      const diff = Math.round((co-today)/86400000);
 
-      // Eindpoets
-      if(diff <= 14 && diff >= -1){
-        const stateKey = `poets_${l.id}_${bk.checkOut}`;
-        if(!db.clState?.[stateKey]){
-          const nextBk = sortedBk[idx+1];
-          const { datum, deadline, heeftDeadline } = optimalePoetsDatum(bk.checkOut, nextBk?.checkIn||null);
-          const sameDagCI = nextBk && dateToStr(new Date(nextBk.checkIn+'T12:00:00')) === dateToStr(datum);
-          const sameDagCO = dateToStr(datum) === bk.checkOut;
-          // Tijdvenster bepalen
-          let tijdVenster = '';
-          if(sameDagCI && sameDagCO) tijdVenster = 'tussen 11:00 en 15:00';
-          else if(sameDagCI)         tijdVenster = 'voor 15:00';
-          else if(sameDagCO)         tijdVenster = 'na 11:00';
-          taken.push({ loftId:l.id, type:'eindpoets', datum, tijdVenster, weekend:isWeekend(datum), klaar:false });
-        }
-      }
+  // 1. Poets-taken (enkelvoudig, type === 'poets')
+  (db.taken || []).forEach(t => {
+    if (t.status === 'klaar') return;
+    if (t.type !== 'poets') return;
+    const tDate = new Date(t.datum || todayStr); tDate.setHours(0,0,0,0);
+    const diffD = Math.round((tDate - today) / 86400000);
+    if (diffD > 14) return; // verder dan 2 weken: niet afdrukken
 
-      // Tussentijdse poets
-      const ciD = new Date(bk.checkIn); ciD.setHours(0,0,0,0);
-      const verblijfDagen = Math.round((co-ciD)/86400000);
-      if(verblijfDagen > 14 && diff > 0){
-        const stateKey = `tussentijds_${l.id}_${bk.checkIn}`;
-        if(!db.clState?.[stateKey]){
-          const halverwege = new Date(ciD); halverwege.setDate(ciD.getDate()+Math.floor(verblijfDagen/2));
-          const datum = halverwege < today ? today : eersteWerkdag(halverwege);
-          const diffD = Math.round((datum-today)/86400000);
-          if(diffD <= 14) taken.push({ loftId:l.id, type:'tussentijds', datum, tijdVenster:'', weekend:isWeekend(datum), klaar:false });
-        }
-      }
+    const loft = LOFTS.find(l => l.id === t.loftId);
+    const isTuss = t.titel?.includes('Tussentijds') || t.type === 'tussentijds';
+    const nextBkRaw = bookings.filter(b => b.loftId === t.loftId && b.checkIn > (t.bkId ? (bookings.find(b2=>b2.id===t.bkId)?.checkOut||'') : todayStr)).sort((a,b)=>a.checkIn<b.checkIn?-1:1)[0];
+
+    // Tijdvenster
+    let tijdVenster = t.tijdVan && t.tijdTot ? `${t.tijdVan}–${t.tijdTot}` : (t.tijdVan ? `na ${t.tijdVan}` : '');
+
+    taken.push({
+      loftId: t.loftId,
+      loftLabel: loft ? loft.id : t.loftId,
+      type: isTuss ? 'tussentijds' : 'eindpoets',
+      datum: tDate,
+      datumStr: dateToStr(tDate),
+      tijdVenster,
+      diffD,
+      klaar: false,
+      bkId: t.bkId || '',
+      isTeVroeg: diffD < 0,
     });
   });
 
-  // Groepeer per dag
-  const perDag = {};
-  taken.forEach(t=>{
-    const ds = dateToStr(t.datum);
-    if(!perDag[ds]) perDag[ds]=[];
-    perDag[ds].push(t);
+  // 2. Gebundelde poets-taken (loften array)
+  (db.taken || []).forEach(t => {
+    if (t.status === 'klaar') return;
+    if (!t.gebundeld) return;
+    if (t.type !== 'poets' && !(t.toegewezenAan||'').startsWith('schoonmaak')) return;
+
+    (t.loften || []).forEach(item => {
+      if (item.status === 'klaar') return;
+      const tDate = new Date(t.datum || todayStr); tDate.setHours(0,0,0,0);
+      const diffD = Math.round((tDate - today) / 86400000);
+      if (diffD > 14) return;
+      const loft = LOFTS.find(l => l.id === item.loftId);
+      const isTuss = t.titel?.includes('Tussentijds');
+      taken.push({
+        loftId: item.loftId,
+        loftLabel: loft ? loft.id : item.loftId,
+        type: isTuss ? 'tussentijds' : 'eindpoets',
+        datum: tDate,
+        datumStr: dateToStr(tDate),
+        tijdVenster: t.tijdVan && t.tijdTot ? `${t.tijdVan}–${t.tijdTot}` : '',
+        diffD,
+        klaar: false,
+        bkId: t.bkId || '',
+        isTeVroeg: diffD < 0,
+      });
+    });
   });
 
-  // Render
-  const dateRange = `${today.toLocaleDateString('nl-BE',{day:'numeric',month:'long'})} — ${new Date(today.getTime()+13*86400000).toLocaleDateString('nl-BE',{day:'numeric',month:'long',year:'numeric'})}`;
+  // 3. Fallback: genereer rechtstreeks uit bookings (als db.taken leeg is)
+  if (taken.length === 0) {
+    LOFTS.forEach(l => {
+      const sortedBk = bookings.filter(b => b.loftId === l.id).sort((a,b) => a.checkOut < b.checkOut ? -1 : 1);
+      sortedBk.forEach((bk, idx) => {
+        const co = new Date(bk.checkOut); co.setHours(0,0,0,0);
+        const diffD = Math.round((co - today) / 86400000);
+        if (diffD > 14 || diffD < -7) return;
+        const nextBk = sortedBk[idx + 1];
+        const { datum } = optimalePoetsDatum(bk.checkOut, nextBk?.checkIn || null);
+        const diffDatum = Math.round((datum - today) / 86400000);
+        if (diffDatum > 14) return;
+        const sameDagCI = nextBk && dateToStr(new Date(nextBk.checkIn + 'T12:00:00')) === dateToStr(datum);
+        const sameDagCO = dateToStr(datum) === bk.checkOut;
+        let tijdVenster = '';
+        if (sameDagCI && sameDagCO) tijdVenster = '11:00–15:00';
+        else if (sameDagCI) tijdVenster = 'voor 15:00';
+        else if (sameDagCO) tijdVenster = 'na 11:00';
+        taken.push({ loftId: l.id, loftLabel: l.id, type: 'eindpoets', datum, datumStr: dateToStr(datum), tijdVenster, diffD: diffDatum, klaar: false, bkId: bk.id, isTeVroeg: diffDatum < 0 });
+      });
+    });
+  }
+
+  // ── Dedupliceer (zelfde loft + datum + type) ──────────────────────────────
+  const seen = new Set();
+  const takenUniek = taken.filter(t => {
+    const key = `${t.loftId}_${t.datumStr}_${t.type}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  // ── Groepeer per dag ──────────────────────────────────────────────────────
+  const perDag = {};
+  takenUniek.sort((a,b) => a.datumStr < b.datumStr ? -1 : 1).forEach(t => {
+    if (!perDag[t.datumStr]) perDag[t.datumStr] = [];
+    perDag[t.datumStr].push(t);
+  });
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  const endDate = new Date(today.getTime() + 13 * 86400000);
+  const dateRange = `${today.toLocaleDateString('nl-BE',{day:'numeric',month:'long'})} \u2014 ${endDate.toLocaleDateString('nl-BE',{day:'numeric',month:'long',year:'numeric'})}`;
   document.getElementById('mPrintTitle').textContent = `Poetsplanning ${dateRange}`;
 
-  let html = `<div id="printWrapper" style="padding:20px">
-    <div class="print-header" style="margin-bottom:16px;padding-bottom:10px;border-bottom:2px solid var(--dh-bdr)">
-      <div style="font-family:var(--disp);font-size:20px;font-weight:800;color:var(--dh-cream)">De Hoorn — Poetsplanning</div>
-      <div style="font-size:12px;color:var(--dh-muted);margin-top:2px">${dateRange} · ${new Date().toLocaleDateString('nl-BE',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
+  const dagen = Object.keys(perDag).sort();
+
+  let printHtml = `<div id="printWrapper" style="padding:0">
+    <div class="print-header">
+      <div style="font-family:var(--disp);font-size:22px;font-weight:800">De Hoorn \u2014 Poetsplanning</div>
+      <div style="font-size:12px;margin-top:4px">${dateRange} \u00b7 Afgedrukt op ${new Date().toLocaleDateString('nl-BE',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
     </div>`;
 
-  if(Object.keys(perDag).length === 0){
-    html += `<div style="text-align:center;padding:40px;color:var(--dh-muted);font-size:14px">✅ Geen poetstaken in de komende 14 dagen</div>`;
+  if (dagen.length === 0) {
+    printHtml += `<div style="text-align:center;padding:40px;font-size:14px">\u2705 Geen openstaande poetstaken in de komende 14 dagen</div>`;
   } else {
-    // Tabel
-    html += `<table class="print-table" style="width:100%;border-collapse:collapse">
+    printHtml += `<table class="print-table">
       <thead>
-        <tr style="background:var(--dh-sur2)">
-          <th style="padding:8px 12px;border:1px solid var(--dh-bdr);font-size:11px;font-weight:700;color:var(--dh-muted);text-align:left;width:160px">Datum</th>
-          <th style="padding:8px 12px;border:1px solid var(--dh-bdr);font-size:11px;font-weight:700;color:var(--dh-muted);text-align:left;width:80px">Loft</th>
-          <th style="padding:8px 12px;border:1px solid var(--dh-bdr);font-size:11px;font-weight:700;color:var(--dh-muted);text-align:left">Type</th>
-          <th style="padding:8px 12px;border:1px solid var(--dh-bdr);font-size:11px;font-weight:700;color:var(--dh-muted);text-align:left">Tijdvenster</th>
-          <th style="padding:8px 12px;border:1px solid var(--dh-bdr);font-size:11px;font-weight:700;color:var(--dh-muted);text-align:center;width:80px">✓</th>
+        <tr>
+          <th style="width:90px">Datum</th>
+          <th style="width:50px">Loft</th>
+          <th>Type</th>
+          <th style="width:100px">Tijdvenster</th>
+          <th style="width:60px">Status</th>
         </tr>
       </thead>
       <tbody>`;
 
-    dagen.forEach(d=>{
-      const ds = dateToStr(d);
-      const dagtaken = (perDag[ds]||[]).sort((a,b)=>a.loftId<b.loftId?-1:1);
-      if(!dagtaken.length) return;
+    dagen.forEach(ds => {
+      const d = new Date(ds + 'T12:00:00');
+      const dow = d.getDay();
+      const isWE = dow === 0 || dow === 6;
+      const dagLabel = d.toLocaleDateString('nl-BE',{weekday:'short',day:'numeric',month:'short'});
+      const rowClass = isWE ? 'print-row-weekend' : '';
 
-      const dagLabel = d.toLocaleDateString('nl-BE',{weekday:'long',day:'numeric',month:'short'});
-      const isWE = isWeekend(d);
-      const rowBg = isWE ? 'background:rgba(212,168,0,.1)' : '';
-      const warnBg = isWE ? `<span style="font-size:9px;font-weight:700;color:var(--dh-gold);margin-left:6px">⚠ WE</span>` : '';
+      perDag[ds].sort((a,b) => a.loftId < b.loftId ? -1 : 1).forEach((t, i) => {
+        const badge = t.type === 'tussentijds'
+          ? `<span class="print-badge-tuss">TUSS</span>`
+          : `<span class="print-badge-eind">EIND</span>`;
+        const telaatWarn = t.diffD < 0 ? `<span class="print-warn"> \u26a0 Te laat (${Math.abs(t.diffD)}d)</span>` : '';
+        const tijdCell = t.tijdVenster ? `<span class="print-time">${t.tijdVenster}</span>` : '\u2014';
 
-      dagtaken.forEach((t,ti)=>{
-        const typeBadgeBg = t.type==='eindpoets'?'rgba(42,100,160,.2)':'rgba(42,120,80,.2)';
-        const typeBadgeClr = t.type==='eindpoets'?'var(--dh-blue)':'var(--dh-grn)';
-        const typeLbl = t.type==='eindpoets'?'🧹 Eindpoets':'↩ Tussentijds';
-        const tijdHtml = t.tijdVenster
-          ? `<span style="font-weight:700;color:var(--dh-red);font-size:12px">${t.tijdVenster}</span>`
-          : `<span style="color:var(--dh-muted);font-size:11px">—</span>`;
-
-        html += `<tr style="${rowBg}">
-          ${ti===0 ? `<td rowspan="${dagtaken.length}" style="padding:8px 12px;border:1px solid var(--dh-bdr);vertical-align:middle;font-weight:700;color:var(--dh-cream)">${dagLabel}${warnBg}</td>` : ''}
-          <td style="padding:8px 12px;border:1px solid var(--dh-bdr)">
-            <span style="font-family:var(--disp);font-size:16px;font-weight:800;color:var(--dh-gold)">${t.loftId}</span>
-          </td>
-          <td style="padding:8px 12px;border:1px solid var(--dh-bdr)">
-            <span style="background:${typeBadgeBg};color:${typeBadgeClr};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">${typeLbl}</span>
-          </td>
-          <td style="padding:8px 12px;border:1px solid var(--dh-bdr)">${tijdHtml}</td>
-          <td style="padding:8px 12px;border:1px solid var(--dh-bdr);text-align:center">
-            <span style="display:inline-block;width:20px;height:20px;border:2px solid var(--dh-bdr);border-radius:4px"></span>
-          </td>
+        printHtml += `<tr class="${rowClass}">
+          <td>${i === 0 ? `<strong>${dagLabel}</strong>${isWE ? ' <span style="color:#886600">\u272a</span>' : ''}` : ''}</td>
+          <td style="font-family:var(--disp);font-size:16px;font-weight:800;color:#000">${t.loftLabel}</td>
+          <td>${badge}${telaatWarn}</td>
+          <td>${tijdCell}</td>
+          <td style="color:#555">\u25a2 Open</td>
         </tr>`;
       });
     });
 
-    html += `</tbody></table>`;
+    printHtml += `</tbody></table>`;
+
+    // Samenvatting
+    const totaal = takenUniek.length;
+    const teLaat = takenUniek.filter(t => t.diffD < 0).length;
+    const vandaag = takenUniek.filter(t => t.diffD === 0).length;
+    printHtml += `<div style="margin-top:16px;font-size:10px;color:#555;border-top:1px solid #ccc;padding-top:8px">
+      Totaal: <strong>${totaal}</strong> taak${totaal !== 1 ? 'en' : ''}
+      ${teLaat > 0 ? ` \u00b7 <span style="color:#cc3300;font-weight:700">\u26a0 ${teLaat} te laat</span>` : ''}
+      ${vandaag > 0 ? ` \u00b7 <strong>${vandaag} vandaag</strong>` : ''}
+    </div>`;
   }
 
-  html += `<div style="margin-top:16px;font-size:10px;color:var(--dh-muted);text-align:right">Afgedrukt op ${new Date().toLocaleDateString('nl-BE',{day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div></div>`;
-  document.getElementById('printPlanContent').innerHTML = html;
+  printHtml += `</div>`;
+  document.getElementById('printPlanContent').innerHTML = printHtml;
 }
 
 function sectionHeader(label, count, kleur){
@@ -8944,19 +8994,74 @@ function getVolgendeUitvoering(taak){
 
 <style>
 @media print {
-  body > *:not(#printWrapper) { display:none !important; }
-  #printWrapper { display:block !important; }
-  #printWrapper { font-family:Arial,sans-serif; font-size:11px; color:#000; }
-  .print-header { text-align:center; margin-bottom:16px; border-bottom:2px solid #000; padding-bottom:8px; }
+  /* ── Verberg alles behalve de print-modal ── */
+  body > *:not(#mPrint) { display:none !important; }
+
+  /* ── Modal: verwijder overlay/positionering ── */
+  #mPrint {
+    display:block !important;
+    position:static !important;
+    background:white !important;
+    padding:0 !important;
+    margin:0 !important;
+    overflow:visible !important;
+    width:100% !important;
+  }
+  #mPrint .mc {
+    width:100% !important;
+    max-width:100% !important;
+    max-height:none !important;
+    box-shadow:none !important;
+    border-radius:0 !important;
+    background:white !important;
+    overflow:visible !important;
+    display:block !important;
+  }
+  /* Verberg modal-header (sluitknoppen, afdrukknop) */
+  #mPrint .mh { display:none !important; }
+  /* Verberg scroll-beperking op modal-body */
+  #mPrint .mb {
+    overflow:visible !important;
+    max-height:none !important;
+    padding:0 !important;
+  }
+
+  /* ── printWrapper: forceer witte achtergrond & zwarte tekst ── */
+  #printWrapper {
+    display:block !important;
+    font-family:Arial,sans-serif !important;
+    font-size:11px !important;
+    color:#000 !important;
+    background:white !important;
+    padding:10px !important;
+  }
+  #printWrapper * {
+    color:#000 !important;
+    background:transparent !important;
+    border-color:#ccc !important;
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact;
+  }
+
+  /* ── Tabelopmaak ── */
+  .print-header {
+    text-align:center;
+    margin-bottom:16px;
+    padding-bottom:8px;
+    border-bottom:2px solid #000 !important;
+  }
   .print-table { width:100%; border-collapse:collapse; }
-  .print-table th, .print-table td { border:1px solid #ccc; padding:6px 8px; font-size:10px; }
-  .print-table th { background:#eee; font-weight:700; text-align:left; }
+  .print-table th, .print-table td { border:1px solid #ccc !important; padding:6px 8px; font-size:10px; }
+  .print-table th { background:#eee !important; color:#000 !important; font-weight:700; text-align:left; }
   .print-row-weekend td { background:#fff9e6 !important; }
-  .print-badge-eind { background:#ddeeff; color:#1a5580; border-radius:3px; padding:1px 5px; font-size:9px; font-weight:700; }
-  .print-badge-tuss { background:#e8f5e9; color:#2a6a3a; border-radius:3px; padding:1px 5px; font-size:9px; font-weight:700; }
-  .print-warn { color:#cc3300; font-weight:700; font-size:9px; }
-  .print-time { font-weight:700; color:#cc3300; }
-  .no-print { display:none !important; }
+  .print-badge-eind { background:#ddeeff !important; color:#1a5580 !important; border-radius:3px; padding:1px 5px; font-size:9px; font-weight:700; }
+  .print-badge-tuss { background:#e8f5e9 !important; color:#2a6a3a !important; border-radius:3px; padding:1px 5px; font-size:9px; font-weight:700; }
+  .print-warn { color:#cc3300 !important; font-weight:700; font-size:9px; }
+  .print-time { font-weight:700; color:#cc3300 !important; }
+  .no-print, button { display:none !important; }
+
+  /* ── Paginering ── */
+  @page { margin:15mm; }
 }
 </style>
 
