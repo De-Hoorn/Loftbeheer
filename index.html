@@ -1309,7 +1309,7 @@ function load(){
   if(typeof berekenEindpoetsDatum === 'function'){
     db.taken.filter(t=>t.titel==='Eindpoets'&&t.status==='open'&&t.bkId).forEach(t=>{
       const bk = bookings.find(b=>b.id===t.bkId); if(!bk) return;
-      const vBk = bookings.find(b=>b.loftId===bk.loftId&&b.checkIn>bk.checkOut);
+      const vBk = bookings.find(b=>b.loftId===bk.loftId&&b.checkIn>=bk.checkOut&&b.id!==bk.id);
       const ep = berekenEindpoetsDatum(bk.checkOut, vBk?.checkIn||null);
       t.datum=ep.datum; t.tijdVan=ep.tijdVan; t.tijdTot=ep.tijdTot;
     });
@@ -2400,6 +2400,52 @@ function renderPrintPlanning(){
   printHtml += `</div>`;
   document.getElementById('printPlanContent').innerHTML = printHtml;
 }
+function printPlanningVenster(){
+  // Haal de huidige planningsinhoud op
+  const content = document.getElementById('printPlanContent');
+  if(!content){ window.print(); return; }
+
+  // Open een nieuw venster met enkel de planningsinhoud
+  const win = window.open('', '_blank', 'width=900,height=700');
+  if(!win){ alert('Pop-up geblokkeerd. Sta pop-ups toe voor deze pagina.'); return; }
+
+  win.document.write(`<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <title>Poetsplanning De Hoorn</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 11px; color: #000; background: white; padding: 20px; }
+    h1 { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+    .sub { font-size: 12px; color: #555; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 2px solid #000; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { border: 1px solid #ccc; padding: 6px 8px; font-size: 10px; text-align: left; vertical-align: top; }
+    th { background: #eee; font-weight: 700; }
+    tr.weekend td { background: #fff9e6; }
+    .badge-eind { background: #ddeeff; color: #1a5580; border-radius: 3px; padding: 1px 5px; font-size: 9px; font-weight: 700; }
+    .badge-tuss { background: #e8f5e9; color: #2a6a3a; border-radius: 3px; padding: 1px 5px; font-size: 9px; font-weight: 700; }
+    .te-laat { color: #cc3300; font-weight: 700; font-size: 9px; }
+    .tijdslot { font-weight: 700; color: #cc3300; }
+    .samenvatting { margin-top: 16px; font-size: 10px; color: #555; border-top: 1px solid #ccc; padding-top: 8px; }
+    .loft-nr { font-size: 16px; font-weight: 800; }
+    @media print {
+      @page { margin: 15mm; }
+      body { padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  ${content.innerHTML}
+</body>
+</html>`);
+
+  win.document.close();
+  win.focus();
+  // Wacht tot stijlen geladen zijn dan print
+  setTimeout(() => { win.print(); }, 400);
+}
+
 
 function sectionHeader(label, count, kleur){
   return `<div style="font-size:9px;font-weight:700;color:${kleur};letter-spacing:2px;text-transform:uppercase;margin:16px 0 10px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--dh-bdr);padding-bottom:6px">
@@ -3668,12 +3714,20 @@ function renderAgenda(){
       const bk=bookings.find(b=>b.loftId===l.id&&b.checkIn<=ds&&b.checkOut>ds);
       const isCI=bk&&bk.checkIn===ds;
       const isCO=bookings.find(b=>b.loftId===l.id&&b.checkOut===ds);
+      // Same-day: check-out EN check-in op zelfde dag (andere boekingen)
+      const isSameDag=isCO&&bk&&isCO.id!==bk.id&&bk.checkIn===ds;
       let cell='';
-      if(isCO&&!bk){
-        // Check-out dag: volledig rood blok (analoog aan check-in blauw)
+      if(isSameDag){
+        // Gesplitste cel: linkerhelft = check-out (rood), rechterhelft = check-in (blauw)
+        const clsCI=bk.status==='option'?'bb-option':'bb-checkin';
+        cell=`<div style="display:flex;height:100%;gap:1px;width:100%">` +
+          `<div class="booking-block bb-checkout" style="flex:1;min-width:0;font-size:9px;padding:1px 3px" title="Check-out ${isCO.name}" onclick="openBoekingDetail('${isCO.id}')"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">◀ ${isCO.name}</span></div>` +
+          `<div class="booking-block ${clsCI}" style="flex:1;min-width:0;font-size:9px;padding:1px 3px" title="Check-in ${bk.name}" onclick="openBoekingDetail('${bk.id}')"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">▶ ${bk.name}</span></div>` +
+          `</div>`;
+      } else if(isCO&&!bk){
+        // Enkel check-out op deze dag
         cell=`<div class="booking-block bb-checkout" title="Check-out ${isCO.name}" onclick="openBoekingDetail('${isCO.id}')"><span style="overflow:hidden;text-overflow:ellipsis">◀ ${isCO.name}</span></div>`;
-      }
-      if(bk){
+      } else if(bk){
         const cls=isCI?'bb-checkin':bk.status==='option'?'bb-option':'bb-confirmed';
         cell=`<div class="booking-block ${cls}" title="${bk.name}" onclick="openBoekingDetail('${bk.id}')"><span style="overflow:hidden;text-overflow:ellipsis">${isCI?'▶':''} ${bk.name}</span></div>`;
       }
@@ -7762,7 +7816,7 @@ function renderSchoonmaakTaken(el, niveaus){
       const diff = Math.round((co-today)/86400000);
       if(!isEigenaar && diff > 14) return; // te ver weg (schoonmaker ziet max 14 dagen vooruit)
       const stateKey = `poets_${l.id}_${bk.checkOut}`;
-      if(db.clState?.[stateKey]) return; // al klaar
+      if(db.clState?.[stateKey]===true) return; // al klaar (enkel als expliciet true)
       // Controleer of er al een poets-taak in db.taken staat voor deze boeking
       const heeftTaak = db.taken.some(t=>
         t.type==='poets'&&t.titel==='Eindpoets'&&t.status==='open'&&t.loftId===l.id&&
@@ -8149,9 +8203,12 @@ function berekenEindpoetsDatum(coStr, nextCiStr){
   // Tijdvenster helpers
   function tijden(d){
     const isCodag = d.toDateString() === co.toDateString();
-    const tijdVan = isCodag ? '11:00' : '09:00'; // checkout om 11u
-    const tijdTot = (nextCi && d.toDateString()===nextCi.toDateString()) ? '15:00' : '';
-    return {tijdVan, tijdTot};
+    const isNxtCiDag = nextCi && d.toDateString() === nextCi.toDateString();
+    // Same-day CO+CI: poets MOET tussen 11u (checkout) en 15u (checkin) plaatsvinden
+    const isSameDagCOCI = isCodag && isNxtCiDag;
+    const tijdVan = isCodag ? '11:00' : '09:00';
+    const tijdTot = isNxtCiDag ? '15:00' : '';
+    return {tijdVan, tijdTot, isSameDagCOCI};
   }
 
   // Probeer tot max 14 dagen na checkout
@@ -8982,7 +9039,7 @@ function getVolgendeUitvoering(taak){
       <span style="font-size:16px">🖨</span>
       <span id="mPrintTitle" style="font-family:var(--disp);font-size:14px;font-weight:700;color:var(--dh-cream)">Poetsplanning</span>
       <div style="margin-left:auto;display:flex;gap:8px">
-        <button onclick="window.print()" class="btn btn-gold btn-sm">🖨 Afdrukken</button>
+        <button onclick="printPlanningVenster()" class="btn btn-gold btn-sm">🖨 Afdrukken</button>
         <button class="btn btn-ghost btn-sm" onclick="closeM('mPrint')">✕ Sluiten</button>
       </div>
     </div>
