@@ -2300,31 +2300,21 @@ function renderPrintPlanning(){
       const diffCO = Math.round((co-today)/86400000);
       if(diffCO>14||diffCO<-14) return; // buiten venster
 
-      // Check of er al een poets-taak bestaat voor deze checkout
-      const bkCheckStr = bk.checkOut;
-      const heeftTaak = (db.taken||[]).some(t=>{
-        if(t.status==='klaar'||t.type!=='poets'||t.loftId!==l.id) return false;
-        if(t.bkId===bk.id||t.bkId===bk.checkOut) return true;
-        if(t.datum&&Math.abs(new Date(t.datum+'T12:00:00')-co)/86400000<=8) return true;
-        return false;
-      });
-
-      // Bekijk ook de dynamische systeemtaken die al toegevoegd werden via step 1
+      // Bereken de correcte poets-datum voor deze checkout
       const nextBk = sortedBk[idx+1];
       const ep = optimalePoetsDatum(bk.checkOut, nextBk?.checkIn||null);
       const datumStr = dateToStr(ep.datum);
       const diffD = Math.round((ep.datum-today)/86400000);
       if(diffD>14) return;
 
-      // Al aanwezig in de seenKeys? Dan niet dubbel toevoegen
+      // Enkel toevoegen als deze exacte datum+loft nog niet in seenKeys staat.
+      // GEEN heeftTaak check: een foutief gedateerde taak in db.taken mag de
+      // correcte boeking-datum niet blokkeren.
       const key = `${l.id}_${datumStr}_eindpoets`;
       if(seenKeys.has(key)) return;
 
-      // Niet in db.taken en niet al gegenereerd: voeg toe
-      if(!heeftTaak){
-        const tijdV = ep.tijdVan&&ep.tijdTot?`${ep.tijdVan}–${ep.tijdTot}`:ep.tijdVan?`na ${ep.tijdVan}`:'';
-        addTakenEntry(l.id, 'eindpoets', ep.datum, tijdV, diffD, bk.id);
-      }
+      const tijdV = ep.tijdVan&&ep.tijdTot?`${ep.tijdVan}–${ep.tijdTot}`:ep.tijdVan?`na ${ep.tijdVan}`:'';
+      addTakenEntry(l.id, 'eindpoets', ep.datum, tijdV, diffD, bk.id);
     });
   });
 
