@@ -1307,11 +1307,25 @@ function load(){
   Object.keys(_PCD).forEach(k=>{if(!db.poetsConfig[k])db.poetsConfig[k]={..._PCD[k]};});
   // Herbereken eindpoets-datums (werkdag-aware) voor bestaande taken
   if(typeof berekenEindpoetsDatum === 'function'){
+    // Met bkId: update via directe koppeling
     db.taken.filter(t=>t.titel==='Eindpoets'&&t.status==='open'&&t.bkId).forEach(t=>{
       const bk = bookings.find(b=>b.id===t.bkId); if(!bk) return;
       const vBk = bookings.find(b=>b.loftId===bk.loftId&&b.checkIn>=bk.checkOut&&b.id!==bk.id);
       const ep = berekenEindpoetsDatum(bk.checkOut, vBk?.checkIn||null);
       t.datum=ep.datum; t.tijdVan=ep.tijdVan; t.tijdTot=ep.tijdTot;
+    });
+    // Zonder bkId: match via loft + datum-venster (max 8 dagen rond checkout)
+    db.taken.filter(t=>t.titel==='Eindpoets'&&t.status==='open'&&!t.bkId&&t.loftId&&t.datum).forEach(t=>{
+      const coDate = new Date(t.datum+'T12:00:00'); if(isNaN(coDate)) return;
+      const bk = bookings.find(b=>{
+        if(b.loftId!==t.loftId) return false;
+        return Math.abs(new Date(b.checkOut+'T12:00:00')-coDate)/86400000<=8;
+      });
+      if(!bk) return;
+      const vBk = bookings.find(b=>b.loftId===bk.loftId&&b.checkIn>=bk.checkOut&&b.id!==bk.id);
+      const ep = berekenEindpoetsDatum(bk.checkOut, vBk?.checkIn||null);
+      t.datum=ep.datum; t.tijdVan=ep.tijdVan; t.tijdTot=ep.tijdTot;
+      t.bkId=bk.id; // koppel voor volgende keren
     });
   }
 }
@@ -7821,9 +7835,19 @@ function renderSchoonmaakTaken(el, niveaus){
       const stateKey = `poets_${l.id}_${bk.checkOut}`;
       if(db.clState?.[stateKey]===true) return; // al klaar (enkel als expliciet true)
       // Controleer of er al een poets-taak in db.taken staat voor deze boeking
-      const heeftTaak = db.taken.some(t=>
-        t.type==='poets'&&t.titel==='Eindpoets'&&t.status==='open'&&t.loftId===l.id&&
-        (t.bkId===bk.id || t.bkId===bk.checkOut || (!t.bkId&&(t.datum===bk.checkOut||t.date===bk.checkOut))));
+      const heeftTaak = db.taken.some(t=>{
+        if(t.type!=='poets'||t.titel!=='Eindpoets'||t.status!=='open'||t.loftId!==l.id) return false;
+        // Primaire match: bkId
+        if(t.bkId===bk.id||t.bkId===bk.checkOut) return true;
+        // Datum exact
+        if(!t.bkId&&(t.datum===bk.checkOut||t.date===bk.checkOut)) return true;
+        // Fallback: datum binnen 8 dagen van checkout (vangt foutief herberekende datums op)
+        if(t.datum){
+          const dagVerschil=Math.abs(new Date(t.datum)-new Date(bk.checkOut))/86400000;
+          if(dagVerschil<=8) return true;
+        }
+        return false;
+      });
       if(heeftTaak) return; // al in db.taken → niet dubbel tonen
       const nextBk = sortedBk[idx+1];
       const {datum} = optimalePoetsDatum(bk.checkOut, nextBk?.checkIn||null);
