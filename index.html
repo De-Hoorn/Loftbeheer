@@ -3718,12 +3718,15 @@ function renderAgenda(){
       const isSameDag=isCO&&bk&&isCO.id!==bk.id&&bk.checkIn===ds;
       let cell='';
       if(isSameDag){
-        // Gesplitste cel: linkerhelft = check-out (rood), rechterhelft = check-in (blauw)
-        const clsCI=bk.status==='option'?'bb-option':'bb-checkin';
-        cell=`<div style="display:flex;height:100%;gap:1px;width:100%">` +
-          `<div class="booking-block bb-checkout" style="flex:1;min-width:0;font-size:9px;padding:1px 3px" title="Check-out ${isCO.name}" onclick="openBoekingDetail('${isCO.id}')"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">◀ ${isCO.name}</span></div>` +
-          `<div class="booking-block ${clsCI}" style="flex:1;min-width:0;font-size:9px;padding:1px 3px" title="Check-in ${bk.name}" onclick="openBoekingDetail('${bk.id}')"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">▶ ${bk.name}</span></div>` +
-          `</div>`;
+        // Gesplitste cel: GEEN .booking-block klasse (vermijdt position:absolute conflict)
+        // Links: check-out (rood), Rechts: check-in (blauw/groen)
+        const bgCI=bk.status==='option'?'var(--dh-ora)':'var(--dh-blue)';
+        const sharedStyle='position:absolute;top:3px;bottom:3px;display:flex;align-items:center;padding:0 4px;font-size:8px;font-weight:600;color:#fff;overflow:hidden;white-space:nowrap;cursor:pointer;transition:opacity .15s';
+        cell=
+          `<div style="${sharedStyle};left:0;right:50%;background:var(--dh-red);border-radius:3px 0 0 3px" title="Check-out ${isCO.name}" onclick="event.stopPropagation();openBoekingDetail('${isCO.id}')">`+
+            `<span style="overflow:hidden;text-overflow:ellipsis">◀ ${isCO.name}</span></div>`+
+          `<div style="${sharedStyle};left:50%;right:0;background:${bgCI};border-radius:0 3px 3px 0" title="Check-in ${bk.name}" onclick="event.stopPropagation();openBoekingDetail('${bk.id}')">`+
+            `<span style="overflow:hidden;text-overflow:ellipsis">▶ ${bk.name}</span></div>`;
       } else if(isCO&&!bk){
         // Enkel check-out op deze dag
         cell=`<div class="booking-block bb-checkout" title="Check-out ${isCO.name}" onclick="openBoekingDetail('${isCO.id}')"><span style="overflow:hidden;text-overflow:ellipsis">◀ ${isCO.name}</span></div>`;
