@@ -2267,7 +2267,7 @@ function renderPrintPlanning(){
     if(t.type!=='poets') return;
     const tDate = new Date((t.datum||todayStr)+'T12:00:00'); tDate.setHours(0,0,0,0);
     const diffD = Math.round((tDate-today)/86400000);
-    if(diffD>14) return;
+    if(diffD>14||diffD<-14) return; // max 14 dagen terug
     const isTuss = t.titel?.includes('Tussentijds');
     const tijdV = t.tijdVan&&t.tijdTot?`${t.tijdVan}–${t.tijdTot}`:t.tijdVan?`na ${t.tijdVan}`:'';
     addTakenEntry(t.loftId, isTuss?'tussentijds':'eindpoets', tDate, tijdV, diffD, t.bkId);
@@ -2305,11 +2305,16 @@ function renderPrintPlanning(){
       const ep = optimalePoetsDatum(bk.checkOut, nextBk?.checkIn||null);
       const datumStr = dateToStr(ep.datum);
       const diffD = Math.round((ep.datum-today)/86400000);
-      if(diffD>14) return;
+      if(diffD>14||diffD<-14) return; // max 14 dagen terug én vooruit
 
-      // Enkel toevoegen als deze exacte datum+loft nog niet in seenKeys staat.
-      // GEEN heeftTaak check: een foutief gedateerde taak in db.taken mag de
-      // correcte boeking-datum niet blokkeren.
+      // Enkel via bkId checken: voorkomt dat fout-gedateerde db.taken taken
+      // de correcte boekings-datum blokkeren (8-dagen window is te breed)
+      const heeftBkTaak = (db.taken||[]).some(t=>
+        t.type==='poets'&&t.loftId===l.id&&t.status!=='klaar'&&
+        (t.bkId===bk.id||t.bkId===bk.checkOut)
+      );
+      if(heeftBkTaak) return;
+
       const key = `${l.id}_${datumStr}_eindpoets`;
       if(seenKeys.has(key)) return;
 
@@ -2358,7 +2363,7 @@ function renderPrintPlanning(){
         const tijdCell=t.tijdVenster?`<span class="print-time">${t.tijdVenster}</span>`:'\u2014';
         printHtml+=`<tr class="${rowClass}">
           <td>${i===0?`<strong>${dagLabel}</strong>${isWE?' <span style="color:#886600">\u272a</span>':''}`:'&nbsp;'}</td>
-          <td style="font-family:var(--disp);font-size:16px;font-weight:800;color:#000">${t.loftLabel}</td>
+          <td style="font-family:Georgia,serif;font-size:15px;font-weight:900;color:#111;white-space:nowrap">${t.loftLabel}</td>
           <td>${badge}${telaatWarn}</td><td>${tijdCell}</td>
           <td style="color:#555">\u25a2 Open</td>
         </tr>`;
