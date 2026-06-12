@@ -863,24 +863,6 @@ function fmtDateLong(iso) {
   return new Date(iso+'T12:00:00').toLocaleDateString('nl-BE',{weekday:'short',day:'numeric',month:'short'});
 }
 function initials(naam) { return naam.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(); }
-function nearestWeekday(iso) {
-  const d = new Date(iso+'T12:00:00'); const dow = d.getDay();
-  if (dow===0) d.setDate(d.getDate()+1);
-  if (dow===6) d.setDate(d.getDate()-1);
-  return d.toISOString().slice(0,10);
-}
-function berekenTussentijds(ci, co) {
-  const dagen = daysBetween(ci, co);
-  if (dagen < 14) return [];
-  if (dagen <= 28) {
-    const m = new Date(ci+'T12:00:00'); m.setDate(m.getDate()+Math.round(dagen/2));
-    return [nearestWeekday(m.toISOString().slice(0,10))];
-  }
-  const res = []; let d = new Date(ci+'T12:00:00'); d.setDate(d.getDate()+14);
-  const coD = new Date(co+'T12:00:00');
-  while (d < coD) { res.push(nearestWeekday(d.toISOString().slice(0,10))); d.setDate(d.getDate()+14); }
-  return res;
-}
 function isEigenaar() { return curUser?.rol === 'eigenaar'; }
 
 function toast(msg, type='') {
@@ -1239,7 +1221,7 @@ function renderTaakCard(ta) {
         </div>
         <div class="taak-body" onclick="window._openTaakDetail('${ta.id}')">
           <div class="taak-loft">Loft ${ta.loftId}</div>
-          <div class="taak-gast">${ta.gast||''}</div>
+          <div class="taak-gast">${ta.gast||''}${ta.tijdVan ? ` · ${ta.tijdVan}${ta.tijdTot?' – '+ta.tijdTot:''}` : ''}</div>
           <div class="taak-badges">
             ${isTuss
               ? `<span class="badge badge-pur">🔄 Tussentijds</span>`
@@ -1290,6 +1272,11 @@ window._openTaakDetail = function(id) {
         <span style="font-size:12px;color:var(--muted)">Datum</span>
         <span>${fmtDateLong(ta.datum)}</span>
       </div>
+      ${ta.tijdVan ? `
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:12px;color:var(--muted)">Tijdvenster</span>
+        <span>${ta.tijdVan}${ta.tijdTot?' – '+ta.tijdTot:''}</span>
+      </div>` : ''}
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span style="font-size:12px;color:var(--muted)">Gast</span>
         <span>${ta.gast||'—'}</span>
@@ -1428,20 +1415,157 @@ window.deleteBoeking = async function() {
   }
 };
 
+// ════════════════════════════════════════════════
+// POETSDATUM LOGICA (conform originele app)
+// ════════════════════════════════════════════════
+
+// Vaste Belgische feestdagen MM-DD
+const BE_FEESTDAGEN_VAST = ['01-01','05-01','07-21','08-15','11-01','11-11','12-25'];
+
+function _pasen(jaar) {
+  const a=jaar%19,b=Math.floor(jaar/100),cc=jaar%100;
+  const d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25);
+  const g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30;
+  const i=Math.floor(cc/4),k=cc%4,l=(32+2*e+2*i-h-k)%7;
+  const m=Math.floor((a+11*h+22*l)/451);
+  const maand=Math.floor((h+l-7*m+114)/31);
+  const dag=(h+l-7*m+114)%31+1;
+  return new Date(jaar,maand-1,dag);
+}
+
+function _beFeestdagenBeweeglijk(jaar) {
+  const pasen = _pasen(jaar);
+  const add = (d,n) => { const r=new Date(d); r.setDate(r.getDate()+n); return r; };
+  return [
+    add(pasen, 1),   // Paasmaandag
+    add(pasen, 39),  // Hemelvaartsdag
+    add(pasen, 50),  // Pinkstermaandag
+  ];
+}
+
+function _isBeFeestdag(datum) {
+  const d = typeof datum==='string' ? new Date(datum+'T12:00:00') : new Date(datum);
+  d.setHours(0,0,0,0);
+  const mmdd = String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  if (BE_FEESTDAGEN_VAST.includes(mmdd)) return true;
+  if (_beFeestdagenBeweeglijk(d.getFullYear()).some(f => f.toDateString()===d.toDateString())) return true;
+  return false;
+}
+
+function _isWerkdag(datum) {
+  const d = new Date(datum+'T12:00:00'); d.setHours(0,0,0,0);
+  const dag = d.getDay();
+  if (dag===0 || dag===6) return false;
+  return !_isBeFeestdag(d);
+}
+
+/**
+ * Berekent de optimale eindpoets-datum na checkout.
+ * Prioriteit: werkdag > zaterdag > zondag/feestdag
+ * Houdt rekening met volgende check-in als deadline.
+ */
+function berekenEindpoetsDatum(coStr, nextCiStr) {
+  const co = new Date(coStr+'T12:00:00'); co.setHours(0,0,0,0);
+  const nextCi = nextCiStr ? (() => { const d=new Date(nextCiStr+'T12:00:00'); d.setHours(0,0,0,0); return d; })() : null;
+
+  function tijden(d) {
+    const isCodag   = d.toDateString() === co.toDateString();
+    const isNxtCiDag = nextCi && d.toDateString() === nextCi.toDateString();
+    const tijdVan = isCodag ? '11:00' : '09:00';
+    const tijdTot = isNxtCiDag ? '15:00' : '';
+    return {tijdVan, tijdTot};
+  }
+
+  const kandidaten = [];
+  for (let i=0; i<=14; i++) {
+    const d = new Date(co); d.setDate(co.getDate()+i);
+    if (nextCi && d > nextCi) break;
+    const dag = d.getDay();
+    const feest   = _isBeFeestdag(d);
+    const werkdag = dag!==0 && dag!==6 && !feest;
+    const za      = dag===6 && !feest;
+    kandidaten.push({d, werkdag, za});
+  }
+
+  const werkdagen  = kandidaten.filter(k=>k.werkdag);
+  const zaterdagen = kandidaten.filter(k=>k.za);
+
+  let gekozen;
+  if (werkdagen.length > 0)       gekozen = werkdagen[0];
+  else if (zaterdagen.length > 0) gekozen = zaterdagen[0];
+  else if (kandidaten.length > 0) gekozen = kandidaten[0];
+  else { const d=new Date(co); d.setDate(co.getDate()+1); gekozen={d}; }
+
+  const _dd = gekozen.d;
+  const datumStr = _dd.getFullYear()+'-'+String(_dd.getMonth()+1).padStart(2,'0')+'-'+String(_dd.getDate()).padStart(2,'0');
+  const {tijdVan, tijdTot} = tijden(gekozen.d);
+  return {datum:datumStr, tijdVan, tijdTot};
+}
+
+/**
+ * Berekent tussentijdse poets-datums.
+ * < 14 dagen: geen tussentijds
+ * 14–28 dagen: 1x rond het midden, op dichtstbijzijnde weekdag
+ * > 28 dagen: elke 14 dagen, op dichtstbijzijnde weekdag
+ */
+function berekenTussentijds(ci, co) {
+  const dagen = Math.round((new Date(co+'T12:00:00') - new Date(ci+'T12:00:00')) / 86400000);
+  if (dagen < 14) return [];
+  const res = [];
+  if (dagen <= 28) {
+    const mid = new Date(ci+'T12:00:00');
+    mid.setDate(mid.getDate() + Math.round(dagen/2));
+    res.push(dichtsteBijgelegenWeekdag(mid));
+  } else {
+    let d = new Date(ci+'T12:00:00');
+    d.setDate(d.getDate()+14);
+    const coDate = new Date(co+'T12:00:00');
+    while (d < coDate) {
+      res.push(dichtsteBijgelegenWeekdag(new Date(d)));
+      d.setDate(d.getDate()+14);
+    }
+  }
+  return res;
+}
+
+function dichtsteBijgelegenWeekdag(datum) {
+  const d = new Date(datum); d.setHours(12,0,0,0);
+  const dow = d.getDay();
+  if (dow===0) d.setDate(d.getDate()+1); // zo → ma
+  if (dow===6) d.setDate(d.getDate()-1); // za → vr
+  return d.toISOString().slice(0,10);
+}
+
 async function generateTaken(bk) {
+  // Zoek volgende boeking voor dit loft (voor eindpoets-deadline)
+  const alleBk = Object.values(cache.boekingen);
+  const volgendeBk = alleBk
+    .filter(b => b.loftId===bk.loftId && b.checkIn > bk.checkOut && b.id!==bk.id)
+    .sort((a,b) => a.checkIn.localeCompare(b.checkIn))[0] || null;
+
+  const ep = berekenEindpoetsDatum(bk.checkOut, volgendeBk?.checkIn || null);
+
   const batch = writeBatch(db);
+
+  // Eindpoets
   const epId = uid();
   batch.set(doc(db,'taken',epId), {
     id:epId, type:'eindpoets', loftId:bk.loftId, bkId:bk.id,
-    gast:bk.naam, datum:bk.checkOut, status:'open', klaarDoor:null, klaarOp:null
+    gast:bk.naam, datum:ep.datum,
+    tijdVan:ep.tijdVan, tijdTot:ep.tijdTot,
+    status:'open', klaarDoor:null, klaarOp:null
   });
+
+  // Tussentijds
   berekenTussentijds(bk.checkIn, bk.checkOut).forEach(datum => {
     const tid = uid();
     batch.set(doc(db,'taken',tid), {
       id:tid, type:'tussentijds', loftId:bk.loftId, bkId:bk.id,
-      gast:bk.naam, datum, status:'open', klaarDoor:null, klaarOp:null
+      gast:bk.naam, datum, tijdVan:'11:00', tijdTot:'15:00',
+      status:'open', klaarDoor:null, klaarOp:null
     });
   });
+
   await batch.commit();
 }
 
