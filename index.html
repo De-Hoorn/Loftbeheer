@@ -1048,6 +1048,11 @@ function logout() {
   showScreen('s-login');
   showLoginStep('ls-1');
 }
+window.logout        = logout;
+window.loginBack     = loginBack;
+window.weekNav       = weekNav;
+window.setFilter     = setFilter;
+window.roosterNav    = roosterNav;
 
 // ════════════════════════════════════════════════
 // APP SHELL
@@ -1114,6 +1119,8 @@ function closeSidebar() {
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('sbOverlay').classList.remove('open');
 }
+window.toggleSidebar = toggleSidebar;
+window.closeSidebar  = closeSidebar;
 
 function updateBadge() {
   const open = Object.values(cache.taken).filter(t=>t.status==='open').length;
@@ -1183,7 +1190,6 @@ function weekNav(dir) {
   if (dir===0) weekOffset=0; else weekOffset+=dir;
   renderTaken();
 }
-window.weekNav = weekNav;
 
 function setFilter(el, f) {
   taakFilter=f;
@@ -1191,7 +1197,6 @@ function setFilter(el, f) {
   el.classList.add('active');
   renderTaken();
 }
-window.setFilter = setFilter;
 
 function renderTaken() {
   const t = today();
@@ -1317,7 +1322,6 @@ function roosterNav(dir) {
   if (dir===0) roosterOffset=0; else roosterOffset+=dir;
   renderBezetting();
 }
-window.roosterNav = roosterNav;
 
 function renderBezetting() {
   const t = today();
