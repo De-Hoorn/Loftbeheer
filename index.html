@@ -708,6 +708,11 @@ input, select, textarea { font-family:var(--sans); font-size:16px; /* prevent iO
         <div class="fld"><label>Check-in tijd</label><input type="time" id="bk-in-tijd" value="15:00"></div>
         <div class="fld"><label>Check-out tijd</label><input type="time" id="bk-out-tijd" value="11:00"></div>
       </div>
+      <!-- Naam gast (altijd tonen) -->
+      <div class="fld">
+        <label>Naam gast</label>
+        <input type="text" id="bk-naam" placeholder="Voornaam Achternaam" autocomplete="off">
+      </div>
       <!-- Beschikbare loften (verschijnt na datums) -->
       <div id="bk-loft-wrap" style="display:none">
         <div class="fld">
@@ -715,11 +720,23 @@ input, select, textarea { font-family:var(--sans); font-size:16px; /* prevent iO
           <select id="bk-loft" onchange="bkLoftGewijzigd()"></select>
         </div>
       </div>
-      <!-- Rest (verschijnt na loft keuze) -->
+      <!-- Extra opties (verschijnt na loft keuze) -->
       <div id="bk-rest" style="display:none">
-        <div class="fld">
-          <label>Naam gast</label>
-          <input type="text" id="bk-naam" placeholder="Voornaam Achternaam" autocomplete="off">
+        <!-- Extra kamer toggle (alleen loften met extraKamer) -->
+        <div id="bk-extrakamer-wrap" style="display:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;background:var(--sur2);border:1px solid var(--bdr);border-radius:var(--r);padding:12px 14px;margin-bottom:8px">
+            <div>
+              <div style="font-size:13px;font-weight:600;color:var(--cream)">🚪 Extra kamer</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px">Bijkomende slaapkamer activeren</div>
+            </div>
+            <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0">
+              <input type="checkbox" id="bk-extrakamer" checked onchange="bkExtraKamerGewijzigd()"
+                style="opacity:0;width:0;height:0;position:absolute">
+              <span id="bk-extrakamer-toggle" style="position:absolute;cursor:pointer;inset:0;background:var(--grn);border-radius:12px;transition:.2s">
+                <span style="position:absolute;content:'';height:18px;width:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s;transform:translateX(20px)"></span>
+              </span>
+            </label>
+          </div>
         </div>
         <!-- Extra bedden (alleen als loft ze heeft) -->
         <div id="bk-extra-wrap" style="display:none">
@@ -1403,7 +1420,8 @@ function renderBezetting() {
         // Poets op bezette dag
         if (hasTaak) cellCls = 'rc-poets-cell';
 
-        html += `<td class="rc-cell${todayCls}" onclick="window._openBoeking('${bkActief.id}')" style="cursor:pointer" title="${bkActief.naam}: ${bkActief.checkIn}–${bkActief.checkOut}">
+        const extraInfo = [bkActief.extraKamer?'extra kamer':'', bkActief.logeerbedden?`${bkActief.logeerbedden}x logeerbed`:'', bkActief.babybedden?`${bkActief.babybedden}x babybed`:''].filter(Boolean).join(', ');
+        html += `<td class="rc-cell${todayCls}" onclick="window._openBoeking('${bkActief.id}')" style="cursor:pointer" title="${bkActief.naam}: ${bkActief.checkIn}–${bkActief.checkOut}${extraInfo?' ('+extraInfo+')':''}">
           <div class="rc-inner ${hasTaak?'rc-poets-cell':cellCls}">
             ${naam ? `<span class="rc-name">${naam}</span>` : hasTaak ? '<span style="font-size:10px">🧹</span>' : ''}
           </div>
@@ -1449,19 +1467,36 @@ function beschikbareLoften(ci, co, excludeId) {
   });
 }
 
+function tijdNaarMinuten(t) {
+  const [h,m] = t.split(':').map(Number); return h*60+m;
+}
+
 function valideerTijden(loftId, ci, co, ciTijd, coTijd, excludeId) {
+  const MIN_BUFFER = 4 * 60; // 4 uur in minuten
   const alleBk = Object.values(cache.boekingen).filter(b => b.loftId===loftId && b.id!==excludeId);
+
+  // Vorige boeking eindigt op zelfde dag als onze CI
   const vorigeCO = alleBk.find(b => b.checkOut === ci);
   if (vorigeCO) {
     const vCOTijd = vorigeCO.checkOutTijd || '11:00';
-    if (ciTijd < vCOTijd)
+    const vCO_min = tijdNaarMinuten(vCOTijd);
+    const CI_min  = tijdNaarMinuten(ciTijd);
+    if (CI_min < vCO_min)
       return `Check-in ${ciTijd} is vóór check-out ${vCOTijd} van ${vorigeCO.naam} op ${fmtDate(ci)}.`;
+    if (CI_min - vCO_min < MIN_BUFFER)
+      return `Te weinig tijd voor eindpoets: slechts ${CI_min - vCO_min} min tussen CO ${vCOTijd} en CI ${ciTijd}. Minimum is 4 uur (240 min).`;
   }
+
+  // Volgende boeking start op zelfde dag als onze CO
   const volgendeCI = alleBk.find(b => b.checkIn === co);
   if (volgendeCI) {
     const vCITijd = volgendeCI.checkInTijd || '15:00';
-    if (coTijd > vCITijd)
+    const vCI_min = tijdNaarMinuten(vCITijd);
+    const CO_min  = tijdNaarMinuten(coTijd);
+    if (CO_min > vCI_min)
       return `Check-out ${coTijd} is ná check-in ${vCITijd} van ${volgendeCI.naam} op ${fmtDate(co)}.`;
+    if (vCI_min - CO_min < MIN_BUFFER)
+      return `Te weinig tijd voor eindpoets: slechts ${vCI_min - CO_min} min tussen CO ${coTijd} en CI ${vCITijd} van ${volgendeCI.naam}. Minimum is 4 uur.`;
   }
   return null;
 }
@@ -1480,8 +1515,11 @@ window._openNieuweBoeking = function() {
   document.getElementById('bk-out').value = '';
   document.getElementById('bk-in-tijd').value = '15:00';
   document.getElementById('bk-out-tijd').value = '11:00';
+  document.getElementById('bk-naam').value = '';
   document.getElementById('bk-loft-wrap').style.display = 'none';
   document.getElementById('bk-rest').style.display = 'none';
+  document.getElementById('bk-extrakamer-wrap').style.display = 'none';
+  document.getElementById('bk-extra-wrap').style.display = 'none';
   bkError('');
   openModal('mBoeking');
 };
@@ -1501,6 +1539,16 @@ window._openBoeking = function(id) {
   document.getElementById('bk-loft-wrap').style.display = 'block';
   document.getElementById('bk-rest').style.display = 'block';
   document.getElementById('bk-naam').value = bk.naam || '';
+  const loft4 = LOFTS.find(l => l.id===bk.loftId);
+  const ekw4  = document.getElementById('bk-extrakamer-wrap');
+  if (loft4?.extraKamer) {
+    ekw4.style.display = 'block';
+    const cb4 = document.getElementById('bk-extrakamer');
+    cb4.checked = bk.extraKamer !== false;
+    _bkUpdateToggle(cb4.checked);
+  } else {
+    ekw4.style.display = 'none';
+  }
   _bkVulExtraBedden(bk.loftId, bk.checkIn, bk.checkOut, bk);
   openModal('mBoeking');
 };
@@ -1523,8 +1571,31 @@ window.bkLoftGewijzigd = function() {
   if (!loftId) return;
   document.getElementById('bk-rest').style.display = 'block';
   const bk = editBoekingId ? cache.boekingen[editBoekingId] : null;
+  const loft = LOFTS.find(l => l.id===loftId);
+  // Extra kamer toggle
+  const ekw = document.getElementById('bk-extrakamer-wrap');
+  if (loft?.extraKamer) {
+    ekw.style.display = 'block';
+    const cb = document.getElementById('bk-extrakamer');
+    cb.checked = bk ? (bk.extraKamer !== false) : true; // standaard aangevinkt
+    _bkUpdateToggle(cb.checked);
+  } else {
+    ekw.style.display = 'none';
+  }
   _bkVulExtraBedden(loftId, ci, co, bk);
 };
+
+window.bkExtraKamerGewijzigd = function() {
+  const cb = document.getElementById('bk-extrakamer');
+  _bkUpdateToggle(cb.checked);
+};
+
+function _bkUpdateToggle(aan) {
+  const span = document.getElementById('bk-extrakamer-toggle');
+  if (!span) return;
+  span.style.background = aan ? 'var(--grn)' : 'var(--bdr2)';
+  span.querySelector('span').style.transform = aan ? 'translateX(20px)' : 'translateX(0)';
+}
 
 function _bkVulLoftSelect(ci, co, huidigLoft) {
   const beschikbaar = beschikbareLoften(ci, co, editBoekingId);
@@ -1607,11 +1678,16 @@ window.saveBoeking = async function() {
   if (!beschikbaar.find(l => l.id===loftId)) { bkError(`Loft ${loftId} niet beschikbaar.`); return; }
   const logeerbedden = parseInt(document.getElementById('val-logeerbedden')?.textContent) || 0;
   const babybedden   = parseInt(document.getElementById('val-babybedden')?.textContent)   || 0;
+  const loftObj = LOFTS.find(l => l.id===loftId);
+  const extraKamer = loftObj?.extraKamer
+    ? (document.getElementById('bk-extrakamer')?.checked !== false)
+    : false;
   setSyncStatus('syncing');
   try {
     const id = editBoekingId || uid();
     const bk = {id, loftId, naam, checkIn:ci, checkOut:co,
-                checkInTijd:ciTijd, checkOutTijd:coTijd, logeerbedden, babybedden};
+                checkInTijd:ciTijd, checkOutTijd:coTijd,
+                logeerbedden, babybedden, extraKamer};
     if (editBoekingId) {
       const oudeTaken = Object.values(cache.taken).filter(ta=>ta.bkId===editBoekingId && ta.status==='open');
       const batch = writeBatch(db);
@@ -1764,19 +1840,20 @@ function dichtsteBijgelegenWeekdag(datum) {
 }
 
 async function generateTaken(bk) {
-  // Zoek volgende boeking voor dit loft (voor eindpoets-deadline)
   const alleBk = Object.values(cache.boekingen);
+
+  // Volgende boeking → bepaalt poetsdatum + tijdvenster voor ONZE eindpoets
   const volgendeBk = alleBk
-    .filter(b => b.loftId===bk.loftId && b.checkIn > bk.checkOut && b.id!==bk.id)
+    .filter(b => b.loftId===bk.loftId && b.checkIn >= bk.checkOut && b.id!==bk.id)
     .sort((a,b) => a.checkIn.localeCompare(b.checkIn))[0] || null;
 
   const ep = berekenEindpoetsDatum(bk.checkOut, volgendeBk?.checkIn || null);
 
-  const batch = writeBatch(db);
+  const wb = writeBatch(db);
 
-  // Eindpoets
+  // Eindpoets voor DEZE boeking
   const epId = uid();
-  batch.set(doc(db,'taken',epId), {
+  wb.set(doc(db,'taken',epId), {
     id:epId, type:'eindpoets', loftId:bk.loftId, bkId:bk.id,
     gast:bk.naam, datum:ep.datum,
     tijdVan:ep.tijdVan, tijdTot:ep.tijdTot,
@@ -1786,14 +1863,34 @@ async function generateTaken(bk) {
   // Tussentijds
   berekenTussentijds(bk.checkIn, bk.checkOut).forEach(datum => {
     const tid = uid();
-    batch.set(doc(db,'taken',tid), {
+    wb.set(doc(db,'taken',tid), {
       id:tid, type:'tussentijds', loftId:bk.loftId, bkId:bk.id,
       gast:bk.naam, datum, tijdVan:'11:00', tijdTot:'15:00',
       status:'open', klaarDoor:null, klaarOp:null
     });
   });
 
-  await batch.commit();
+  // Update eindpoets van VORIGE boeking als die op dezelfde dag eindigt als onze CI
+  // (hun poets-tijdvenster wijzigt door onze nieuwe CI-tijd)
+  const vorigeBk = alleBk
+    .filter(b => b.loftId===bk.loftId && b.checkOut <= bk.checkIn && b.id!==bk.id)
+    .sort((a,b) => b.checkOut.localeCompare(a.checkOut))[0] || null;
+
+  if (vorigeBk) {
+    const vorigeEp = berekenEindpoetsDatum(vorigeBk.checkOut, bk.checkIn);
+    const oudeTaak = Object.values(cache.taken).find(
+      t => t.bkId===vorigeBk.id && t.type==='eindpoets' && t.status==='open'
+    );
+    if (oudeTaak) {
+      wb.update(doc(db,'taken',oudeTaak.id), {
+        datum: vorigeEp.datum,
+        tijdVan: vorigeEp.tijdVan,
+        tijdTot: vorigeEp.tijdTot,
+      });
+    }
+  }
+
+  await wb.commit();
 }
 
 // ════════════════════════════════════════════════
@@ -1822,19 +1919,37 @@ function addBatchRow() {
 
 window.saveBatch = async function() {
   const rows = document.querySelectorAll('#batchBody tr');
-  let count=0, errors=0;
+  let count=0, errors=[];
   const boekingen = [];
-  rows.forEach(row => {
+  // Bouw een tijdelijke lijst op voor interne conflictcheck binnen batch zelf
+  const tempBk = [...Object.values(cache.boekingen)];
+
+  rows.forEach((row, idx) => {
     const loftId = row.querySelector('[name=loft]')?.value;
     const naam   = row.querySelector('[name=naam]')?.value?.trim();
     const ci     = row.querySelector('[name=ci]')?.value;
     const co     = row.querySelector('[name=co]')?.value;
-    if (!naam&&!ci&&!co) return;
-    if (!naam||!ci||!co||co<=ci) { errors++; return; }
-    boekingen.push({id:uid(), loftId, naam, checkIn:ci, checkOut:co});
+    if (!naam&&!ci&&!co) return; // lege rij overslaan
+    // Markeer rij rood als fout
+    const markRood = (msg) => {
+      row.style.outline = '2px solid var(--red)';
+      row.title = msg;
+      errors.push(`Rij ${idx+1}: ${msg}`);
+    };
+    row.style.outline = '';
+    row.title = '';
+    if (!naam||!ci||!co) { markRood('Onvolledig'); return; }
+    if (co<=ci) { markRood('Check-out vóór check-in'); return; }
+    // Conflict check vs bestaande + al ingevoerde batch-rijen
+    const conflict = tempBk.find(b => b.loftId===loftId && b.checkIn<co && b.checkOut>ci);
+    if (conflict) { markRood(`Overlapping met ${conflict.naam} (${fmtDate(conflict.checkIn)}–${fmtDate(conflict.checkOut)})`); return; }
+    const bk = {id:uid(), loftId, naam, checkIn:ci, checkOut:co, checkInTijd:'15:00', checkOutTijd:'11:00'};
+    tempBk.push(bk);
+    boekingen.push(bk);
     count++;
   });
-  if (!count) { if (errors) toast(`${errors} rij(en) ongeldig`,'err'); return; }
+  if (errors.length) toast(`${errors.length} rij(en) met fouten — zie rode randen`,'err');
+  if (!count) return;
 
   setSyncStatus('syncing');
   try {
