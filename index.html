@@ -1361,24 +1361,33 @@ function renderBezetting() {
   document.getElementById('roosterLbl').textContent =
     `${fmtDateLong(ws)} — ${fmtDateLong(days[27])}`;
 
-  // Rooster CSS voor cells
+  // Rooster CSS — conform originele app
   const cellStyle = `
     <style>
-    .rc-cell { position:relative; height:34px; min-width:34px; }
-    .rc-inner { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; overflow:hidden; }
-    .rc-name  { font-size:9px; font-weight:600; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; padding:0 3px; text-shadow:0 1px 2px rgba(0,0,0,.5); }
-    .rc-ci    { background: linear-gradient(135deg, transparent 40%, #2255a0 40%); }
-    .rc-co    { background: linear-gradient(135deg, #a02020 60%, transparent 60%); }
-    .rc-ci-co { background: linear-gradient(135deg, #a02020 50%, #2255a0 50%); }
-    .rc-mid   { background: #2255a0; }
-    .rc-poets-cell { background: var(--pur-l); }
+    .rc-cell  { position:relative; height:34px; min-width:34px; border:1px solid var(--bdr); }
+    .rc-inner { position:absolute; inset:0; display:flex; align-items:center; overflow:hidden; padding:0 4px; }
+    .rc-name  { font-size:9px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden;
+                text-overflow:ellipsis; max-width:100%; text-shadow:0 1px 3px rgba(0,0,0,.6); letter-spacing:.2px; }
+    /* Groen = gewoon verblijf */
+    .rc-groen    { background:#1e5c35; }
+    /* Blauw = check-in dag (naam zichtbaar) */
+    .rc-blauw    { background:linear-gradient(to right, #1a3a7a 0%, #1e5c35 18px); }
+    /* Rood = check-out dag (naam zichtbaar) */
+    .rc-rood     { background:#6b1a1a; }
+    /* Wisseldag = rood links + blauw rechts, diagonaal */
+    .rc-wissel   { background:linear-gradient(105deg, #6b1a1a 48%, #1a3a7a 52%); }
+    /* Tussentijds poets = gedempter groen */
+    .rc-tuss     { background:#14402a; }
+    .rc-tuss-ico { font-size:9px; opacity:.8; }
+    /* Lege poets dag */
+    .rc-poets-leeg { background:rgba(112,80,160,.25); }
     </style>
   `;
 
   let html = cellStyle + `<table class="rooster"><thead><tr>
     <th class="loft-col">Loft</th>
     ${days.map(d => {
-      const dd = new Date(d+'T12:00:00');
+      const dd  = new Date(d+'T12:00:00');
       const isTo = d===t;
       const isWe = dd.getDay()===0||dd.getDay()===6;
       const dayLbl = ['zo','ma','di','wo','do','vr','za'][dd.getDay()];
@@ -1389,60 +1398,88 @@ function renderBezetting() {
   LOFTS.forEach(l => {
     html += `<tr><td class="loft-col">${l.id}</td>`;
     days.forEach(d => {
-      const isTo = d===t;
+      const isTo   = d===t;
       const todayCls = isTo ? ' day-today' : '';
 
-      // Boekingen die op dag d actief zijn (checkIn <= d < checkOut)
-      const bkActief = Object.values(cache.boekingen).find(b => b.loftId===l.id && b.checkIn<=d && b.checkOut>d);
-      // Boeking die op dag d check-out heeft (vorige gast vertrekt)
-      const bkCO     = Object.values(cache.boekingen).find(b => b.loftId===l.id && b.checkOut===d);
-      // Poets taak op dag d
-      const hasTaak  = Object.values(cache.taken).find(ta => ta.loftId===l.id && ta.datum===d && ta.status==='open');
+      // Boeking actief op dag d (gast slaapt hier: checkIn <= d < checkOut)
+      const bkActief = Object.values(cache.boekingen)
+        .find(b => b.loftId===l.id && b.checkIn<=d && b.checkOut>d);
+      // Boeking waarvan checkout = dag d (gast vertrekt deze dag)
+      const bkCO = Object.values(cache.boekingen)
+        .find(b => b.loftId===l.id && b.checkOut===d);
+      // Tussentijdse poets op dag d (open taak)
+      const tuss = Object.values(cache.taken)
+        .find(ta => ta.loftId===l.id && ta.datum===d && ta.type==='tussentijds' && ta.status==='open');
+      // Eindpoets op lege dag
+      const ep = Object.values(cache.taken)
+        .find(ta => ta.loftId===l.id && ta.datum===d && ta.type==='eindpoets' && ta.status==='open');
+
+      const extraInfo = bkActief ? [
+        bkActief.extraKamer?'extra kamer':'',
+        bkActief.logeerbedden?`${bkActief.logeerbedden}x logeerbed`:'',
+        bkActief.babybedden?`${bkActief.babybedden}x babybed`:''
+      ].filter(Boolean).join(', ') : '';
 
       if (bkActief) {
         const isCI = bkActief.checkIn === d;
-        // Check of er ook een vorige gast uitcheckt op dezelfde dag (CI+CO zelfde dag)
-        const bkCOSameDay = Object.values(cache.boekingen).find(b => b.loftId===l.id && b.checkOut===d && b.id!==bkActief.id);
-        const isWisseldag = bkCOSameDay && isCI;
+        // Wisseldag: vorige gast checkt uit op dag d, nieuwe gast checkt in
+        const bkCOsameDay = Object.values(cache.boekingen)
+          .find(b => b.loftId===l.id && b.checkOut===d && b.id!==bkActief.id);
+        const isWisseldag = isCI && bkCOsameDay;
 
-        let cellCls, naam = '';
+        let cls, naamTonen = '';
         if (isWisseldag) {
-          // Zelfde dag: vorige CO + nieuwe CI → split cel rood/blauw, nooit bezem tonen
-          cellCls = 'rc-ci-co';
-          naam = bkActief.naam;
+          cls = 'rc-wissel';
+          naamTonen = bkActief.naam; // naam nieuwe gast rechts
         } else if (isCI) {
-          cellCls = 'rc-ci';
-          naam = bkActief.naam;
+          cls = 'rc-blauw';
+          naamTonen = bkActief.naam;
+        } else if (tuss) {
+          cls = 'rc-tuss'; // tussentijdse poets — gedempter groen, geen bezem
+          naamTonen = '';
         } else {
-          cellCls = 'rc-mid';
-          naam = '';
+          cls = 'rc-groen';
+          naamTonen = '';
         }
 
-        const extraInfo = [bkActief.extraKamer?'extra kamer':'', bkActief.logeerbedden?`${bkActief.logeerbedden}x logeerbed`:'', bkActief.babybedden?`${bkActief.babybedden}x babybed`:''].filter(Boolean).join(', ');
-        html += `<td class="rc-cell${todayCls}" onclick="window._openBoeking('${bkActief.id}')" style="cursor:pointer" title="${bkActief.naam}: ${bkActief.checkIn}–${bkActief.checkOut}${extraInfo?' ('+extraInfo+')':''}">
-          <div class="rc-inner ${cellCls}">
-            ${naam ? `<span class="rc-name">${naam}</span>` : ''}
+        html += `<td class="rc-cell${todayCls}" onclick="window._openBoeking('${bkActief.id}')"
+          style="cursor:pointer" title="${bkActief.naam}: ${bkActief.checkIn}–${bkActief.checkOut}${extraInfo?' · '+extraInfo:''}">
+          <div class="rc-inner ${cls}">
+            ${naamTonen ? `<span class="rc-name">${naamTonen}</span>` : ''}
           </div>
         </td>`;
+
       } else if (bkCO) {
-        // Checkout dag: gast vertrekt, naam tonen in rood, geen bezem
-        html += `<td class="rc-cell${todayCls}" onclick="window._openBoeking('${bkCO.id}')" style="cursor:pointer" title="CO: ${bkCO.naam}">
-          <div class="rc-inner rc-co">
+        // Check-out dag: gast vertrekt, rood met naam
+        html += `<td class="rc-cell${todayCls}" onclick="window._openBoeking('${bkCO.id}')"
+          style="cursor:pointer" title="CO: ${bkCO.naam}">
+          <div class="rc-inner rc-rood">
             <span class="rc-name">${bkCO.naam}</span>
           </div>
         </td>`;
-      } else if (hasTaak) {
-        html += `<td class="rc-cell rc-poets-cell${todayCls}" title="Poets: ${hasTaak.type}">
-          <div class="rc-inner"><span style="font-size:10px">🧹</span></div>
+
+      } else if (ep) {
+        // Lege dag met eindpoets gepland
+        html += `<td class="rc-cell rc-poets-leeg${todayCls}" title="Eindpoets gepland">
+          <div class="rc-inner" style="justify-content:center"><span style="font-size:11px">🧹</span></div>
         </td>`;
+
       } else {
         html += `<td class="rc-cell${todayCls}"></td>`;
       }
     });
     html += '</tr>';
   });
-  html += '</tbody></table>';
-  document.getElementById('roosterWrap').innerHTML = html;
+
+  // Legenda
+  html += `</tbody></table>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--bdr);font-size:11px;color:var(--muted)">
+      <span><span style="display:inline-block;width:12px;height:12px;background:#1e5c35;border-radius:2px;margin-right:4px;vertical-align:middle"></span>Verblijf</span>
+      <span><span style="display:inline-block;width:12px;height:12px;background:#1a3a7a;border-radius:2px;margin-right:4px;vertical-align:middle"></span>Check-in</span>
+      <span><span style="display:inline-block;width:12px;height:12px;background:#6b1a1a;border-radius:2px;margin-right:4px;vertical-align:middle"></span>Check-out</span>
+      <span><span style="display:inline-block;width:12px;height:12px;background:#14402a;border-radius:2px;margin-right:4px;vertical-align:middle"></span>Tussentijds poets</span>
+      <span><span style="display:inline-block;width:12px;height:12px;background:rgba(112,80,160,.4);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Eindpoets</span>
+    </div>`;
 }
 
 // ════════════════════════════════════════════════
