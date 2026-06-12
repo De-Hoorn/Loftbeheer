@@ -1401,13 +1401,13 @@ function renderBezetting() {
 
       if (bkActief) {
         const isCI = bkActief.checkIn === d;
-        const isCO = addDays(d,1) === bkActief.checkOut; // laatste nacht
         // Check of er ook een vorige gast uitcheckt op dezelfde dag (CI+CO zelfde dag)
         const bkCOSameDay = Object.values(cache.boekingen).find(b => b.loftId===l.id && b.checkOut===d && b.id!==bkActief.id);
+        const isWisseldag = bkCOSameDay && isCI;
 
         let cellCls, naam = '';
-        if (bkCOSameDay && isCI) {
-          // Zelfde dag: vorige CO + nieuwe CI → split cel rood/blauw
+        if (isWisseldag) {
+          // Zelfde dag: vorige CO + nieuwe CI → split cel rood/blauw, nooit bezem tonen
           cellCls = 'rc-ci-co';
           naam = bkActief.naam;
         } else if (isCI) {
@@ -1417,20 +1417,18 @@ function renderBezetting() {
           cellCls = 'rc-mid';
           naam = '';
         }
-        // Poets op bezette dag
-        if (hasTaak) cellCls = 'rc-poets-cell';
 
         const extraInfo = [bkActief.extraKamer?'extra kamer':'', bkActief.logeerbedden?`${bkActief.logeerbedden}x logeerbed`:'', bkActief.babybedden?`${bkActief.babybedden}x babybed`:''].filter(Boolean).join(', ');
         html += `<td class="rc-cell${todayCls}" onclick="window._openBoeking('${bkActief.id}')" style="cursor:pointer" title="${bkActief.naam}: ${bkActief.checkIn}–${bkActief.checkOut}${extraInfo?' ('+extraInfo+')':''}">
-          <div class="rc-inner ${hasTaak?'rc-poets-cell':cellCls}">
-            ${naam ? `<span class="rc-name">${naam}</span>` : hasTaak ? '<span style="font-size:10px">🧹</span>' : ''}
+          <div class="rc-inner ${cellCls}">
+            ${naam ? `<span class="rc-name">${naam}</span>` : ''}
           </div>
         </td>`;
       } else if (bkCO) {
-        // Checkout dag (gast vertrekt, loft nog niet bezet)
+        // Checkout dag: gast vertrekt, naam tonen in rood, geen bezem
         html += `<td class="rc-cell${todayCls}" onclick="window._openBoeking('${bkCO.id}')" style="cursor:pointer" title="CO: ${bkCO.naam}">
           <div class="rc-inner rc-co">
-            ${hasTaak ? '<span style="font-size:10px">🧹</span>' : `<span class="rc-name">${bkCO.naam}</span>`}
+            <span class="rc-name">${bkCO.naam}</span>
           </div>
         </td>`;
       } else if (hasTaak) {
