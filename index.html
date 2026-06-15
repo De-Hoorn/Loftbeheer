@@ -607,10 +607,17 @@ input, select, textarea { font-family:var(--sans); font-size:16px; /* prevent iO
           <button class="week-btn" onclick="weekNav(1)">›</button>
           <button class="week-today-btn" onclick="weekNav(0)">Nu</button>
         </div>
+        <!-- Periode filter (alleen eigenaar) -->
+        <div class="fbar" id="periode-bar" style="display:none">
+          <div class="fb active" data-periode="dag"   onclick="setPeriode(this,'dag')">Dag</div>
+          <div class="fb"        data-periode="week"  onclick="setPeriode(this,'week')">Week</div>
+          <div class="fb"        data-periode="maand" onclick="setPeriode(this,'maand')">Maand</div>
+          <div class="fb"        data-periode="alle"  onclick="setPeriode(this,'alle')">Alle</div>
+        </div>
         <div class="fbar">
-          <div class="fb active" onclick="setFilter(this,'all')">Alle</div>
-          <div class="fb" onclick="setFilter(this,'open')">Open</div>
-          <div class="fb" onclick="setFilter(this,'klaar')">Klaar</div>
+          <div class="fb active" data-status onclick="setFilter(this,'all')">Alle</div>
+          <div class="fb"        data-status onclick="setFilter(this,'open')">Open</div>
+          <div class="fb"        data-status onclick="setFilter(this,'klaar')">Klaar</div>
         </div>
         <div id="takenList"></div>
       </div>
@@ -1127,7 +1134,15 @@ function nav(page) {
 
 function render(page) {
   if (page==='status')    renderStatus();
-  if (page==='taken')     renderTaken();
+  if (page==='taken')     {
+    // Toon periode-filter alleen voor eigenaar
+    const pb = document.getElementById('periode-bar');
+    if (pb) pb.style.display = isEigenaar() ? 'flex' : 'none';
+    if (isEigenaar() && periodeFilter==='week') {
+      // Zet standaard op week voor eigenaar
+    }
+    renderTaken();
+  }
   if (page==='bezetting') renderBezetting();
   if (page==='team')      renderTeam();
 }
@@ -1207,6 +1222,8 @@ window._cycleLoftStatus = async function(loftId) {
 // ════════════════════════════════════════════════
 // TAKEN PAGE
 // ════════════════════════════════════════════════
+let periodeFilter = 'week'; // dag | week | maand | alle
+
 function weekNav(dir) {
   if (dir===0) weekOffset=0; else weekOffset+=dir;
   renderTaken();
@@ -1214,19 +1231,56 @@ function weekNav(dir) {
 
 function setFilter(el, f) {
   taakFilter=f;
-  document.querySelectorAll('.fb').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.fb[data-status]').forEach(b=>b.classList.remove('active'));
   el.classList.add('active');
   renderTaken();
 }
+window.setFilter = setFilter;
+
+function setPeriode(el, p) {
+  periodeFilter=p;
+  weekOffset=0;
+  document.querySelectorAll('.fb[data-periode]').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  renderTaken();
+}
+window.setPeriode = setPeriode;
+
+function _getPeriodeBounds() {
+  const t = today();
+  if (periodeFilter==='dag') {
+    const d = addDays(t, weekOffset);
+    return {ws:d, we:d, lbl: fmtDateLong(d)};
+  }
+  if (periodeFilter==='week') {
+    const ws = addDays(weekStart(t), weekOffset*7);
+    const we = addDays(ws, 6);
+    return {ws, we, lbl:`${fmtDateLong(ws)} — ${fmtDateLong(we)}`};
+  }
+  if (periodeFilter==='maand') {
+    const base = new Date(t+'T12:00:00');
+    base.setMonth(base.getMonth() + weekOffset);
+    const ws = `${base.getFullYear()}-${String(base.getMonth()+1).padStart(2,'0')}-01`;
+    const eom = new Date(base.getFullYear(), base.getMonth()+1, 0);
+    const we  = eom.toISOString().slice(0,10);
+    return {ws, we, lbl: base.toLocaleDateString('nl-BE',{month:'long',year:'numeric'})};
+  }
+  // alle
+  return {ws:null, we:null, lbl:'Alle taken'};
+}
 
 function renderTaken() {
-  const t = today();
-  const ws = addDays(weekStart(t), weekOffset*7);
-  const we = addDays(ws, 6);
-  document.getElementById('weekLbl').textContent = `${fmtDateLong(ws)} — ${fmtDateLong(we)}`;
+  const {ws, we, lbl} = _getPeriodeBounds();
+  document.getElementById('weekLbl').textContent = lbl;
 
-  let taken = Object.values(cache.taken).filter(ta=>ta.datum>=ws && ta.datum<=we);
-  // Klaar + in het verleden → automatisch verbergen voor schoonmaker
+  // Toon/verberg nav knoppen bij 'alle'
+  const navKnoppen = document.querySelectorAll('.week-btn');
+  navKnoppen.forEach(b => b.style.display = periodeFilter==='alle' ? 'none' : '');
+
+  let taken = Object.values(cache.taken);
+  if (ws && we) taken = taken.filter(ta=>ta.datum>=ws && ta.datum<=we);
+
+  // Klaar + verleden → verbergen voor schoonmaker
   if (!isEigenaar()) {
     taken = taken.filter(ta => !(ta.status==='klaar' && ta.datum < today()));
   }
@@ -1236,7 +1290,7 @@ function renderTaken() {
 
   const list = document.getElementById('takenList');
   if (!taken.length) {
-    list.innerHTML = `<div class="empty"><div class="empty-ico">✅</div><div class="empty-t">Geen taken</div><div class="empty-s">Geen poetstaken gepland voor<br>${fmtDateLong(ws)} – ${fmtDateLong(we)}</div></div>`;
+    list.innerHTML = `<div class="empty"><div class="empty-ico">✅</div><div class="empty-t">Geen taken</div><div class="empty-s">Geen poetstaken gepland voor deze periode.</div></div>`;
     updateBadge(); return;
   }
 
@@ -1758,10 +1812,27 @@ window.deleteBoeking = async function() {
   if (!confirm('Boeking en bijhorende taken verwijderen?')) return;
   setSyncStatus('syncing');
   try {
+    const teVerwijderen = cache.boekingen[editBoekingId];
+    const alleBk = Object.values(cache.boekingen);
+
+    // Zoek vorige en volgende boeking
+    const vorigeBk = teVerwijderen ? alleBk
+      .filter(b => b.loftId===teVerwijderen.loftId && b.checkOut <= teVerwijderen.checkIn && b.id!==editBoekingId)
+      .sort((a,b) => b.checkOut.localeCompare(a.checkOut))[0] : null;
+    const volgendeBk = teVerwijderen ? alleBk
+      .filter(b => b.loftId===teVerwijderen.loftId && b.checkIn >= teVerwijderen.checkOut && b.id!==editBoekingId)
+      .sort((a,b) => a.checkIn.localeCompare(b.checkIn))[0] : null;
+
     const oudeTaken = Object.values(cache.taken).filter(ta=>ta.bkId===editBoekingId);
     const batch = writeBatch(db);
     oudeTaken.forEach(ta => batch.delete(doc(db,'taken',ta.id)));
     batch.delete(doc(db,'boekingen',editBoekingId));
+
+    // Herbereken eindpoets vorige boeking: deadline wordt nu de nieuwe volgende CI (of null)
+    if (vorigeBk) {
+      _herberekendAangrenzende(batch, vorigeBk, volgendeBk?.checkIn || null);
+    }
+
     await batch.commit();
     closeModal('mBoeking'); toast('Boeking verwijderd','ok');
   } catch(e) { toast('Fout bij verwijderen','err'); setSyncStatus('error'); }
@@ -1888,24 +1959,42 @@ function dichtsteBijgelegenWeekdag(datum) {
   return d.toISOString().slice(0,10);
 }
 
+// Herbereken eindpoets van een aangrenzende boeking in een bestaande writeBatch
+function _herberekendAangrenzende(wb, aangrenzendeBk, nieuweDeadline) {
+  const ep = berekenEindpoetsDatum(aangrenzendeBk.checkOut, nieuweDeadline);
+  const oudeTaak = Object.values(cache.taken).find(
+    t => t.bkId===aangrenzendeBk.id && t.type==='eindpoets' && t.status==='open'
+  );
+  if (oudeTaak) {
+    wb.update(doc(db,'taken',oudeTaak.id), {
+      datum: ep.datum, tijdVan: ep.tijdVan, tijdTot: ep.tijdTot
+    });
+  }
+}
+
 async function generateTaken(bk) {
+  // Gebruik de meest recente cache (net ge-update door saveBoeking)
   const alleBk = Object.values(cache.boekingen);
 
-  // Volgende boeking → bepaalt poetsdatum + tijdvenster voor ONZE eindpoets
+  // Zoek vorige en volgende boeking op dit loft
+  const vorigeBk = alleBk
+    .filter(b => b.loftId===bk.loftId && b.checkOut <= bk.checkIn && b.id!==bk.id)
+    .sort((a,b) => b.checkOut.localeCompare(a.checkOut))[0] || null;
+
   const volgendeBk = alleBk
     .filter(b => b.loftId===bk.loftId && b.checkIn >= bk.checkOut && b.id!==bk.id)
     .sort((a,b) => a.checkIn.localeCompare(b.checkIn))[0] || null;
 
+  // Eindpoets voor DEZE boeking (deadline = start volgende boeking)
   const ep = berekenEindpoetsDatum(bk.checkOut, volgendeBk?.checkIn || null);
 
   const wb = writeBatch(db);
 
-  // Eindpoets voor DEZE boeking
+  // Eindpoets
   const epId = uid();
   wb.set(doc(db,'taken',epId), {
     id:epId, type:'eindpoets', loftId:bk.loftId, bkId:bk.id,
-    gast:bk.naam, datum:ep.datum,
-    tijdVan:ep.tijdVan, tijdTot:ep.tijdTot,
+    gast:bk.naam, datum:ep.datum, tijdVan:ep.tijdVan, tijdTot:ep.tijdTot,
     status:'open', klaarDoor:null, klaarOp:null
   });
 
@@ -1919,24 +2008,10 @@ async function generateTaken(bk) {
     });
   });
 
-  // Update eindpoets van VORIGE boeking als die op dezelfde dag eindigt als onze CI
-  // (hun poets-tijdvenster wijzigt door onze nieuwe CI-tijd)
-  const vorigeBk = alleBk
-    .filter(b => b.loftId===bk.loftId && b.checkOut <= bk.checkIn && b.id!==bk.id)
-    .sort((a,b) => b.checkOut.localeCompare(a.checkOut))[0] || null;
-
+  // Herbereken eindpoets van VORIGE boeking:
+  // hun deadline is nu onze CI (of null als er geen volgende meer is)
   if (vorigeBk) {
-    const vorigeEp = berekenEindpoetsDatum(vorigeBk.checkOut, bk.checkIn);
-    const oudeTaak = Object.values(cache.taken).find(
-      t => t.bkId===vorigeBk.id && t.type==='eindpoets' && t.status==='open'
-    );
-    if (oudeTaak) {
-      wb.update(doc(db,'taken',oudeTaak.id), {
-        datum: vorigeEp.datum,
-        tijdVan: vorigeEp.tijdVan,
-        tijdTot: vorigeEp.tijdTot,
-      });
-    }
+    _herberekendAangrenzende(wb, vorigeBk, bk.checkIn);
   }
 
   await wb.commit();
