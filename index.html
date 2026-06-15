@@ -1179,27 +1179,30 @@ function getLoftStatus(loftId) {
     .find(b => b.loftId===loftId && b.checkIn<=t && b.checkOut>t);
   if (boekActief) return {status:'bezet', boeking:boekActief};
 
-  // Boeking die vandaag uitcheckt: toon bezet tot checkout-tijd, daarna vuil
+  // Boeking die vandaag uitcheckt: bezet tot checkout-tijd
   const boekCO = Object.values(cache.boekingen)
     .find(b => b.loftId===loftId && b.checkOut===t);
   if (boekCO) {
-    const coTijd = boekCO.checkOutTijd || '11:00';
-    const [h,m] = coTijd.split(':').map(Number);
-    const coMin = h*60+m;
-    if (nowMin < coMin) return {status:'bezet', boeking:boekCO}; // nog niet uitgecheckt
-    // Na checkout → vuil als er nog een open eindpoets is
+    const [h,m] = (boekCO.checkOutTijd||'11:00').split(':').map(Number);
+    if (nowMin < h*60+m) return {status:'bezet', boeking:boekCO};
+    // Na checkout: vuil als eindpoets nog open
     const openEp = Object.values(cache.taken)
       .find(ta => ta.bkId===boekCO.id && ta.type==='eindpoets' && ta.status==='open');
     if (openEp) return {status:'leeg-vuil'};
   }
 
-  // Geen actieve boeking: kijk of er een open eindpoets is op dit loft
-  const openEp = Object.values(cache.taken)
-    .find(ta => ta.loftId===loftId && ta.type==='eindpoets' && ta.status==='open');
-  if (openEp) return {status:'leeg-vuil'};
+  // Geen actieve boeking: check ALLEEN achterstallige open eindpoetsen
+  // (datum <= vandaag EN boeking al voorbij) — toekomstige poets tellen NIET mee
+  const achterstallig = Object.values(cache.taken).find(ta => {
+    if (ta.loftId!==loftId || ta.type!=='eindpoets' || ta.status!=='open') return false;
+    if (ta.datum > t) return false; // toekomstig → geen impact op huidige status
+    const bk = cache.boekingen[ta.bkId];
+    return !bk || bk.checkOut <= t; // boeking is voorbij
+  });
+  if (achterstallig) return {status:'leeg-vuil'};
 
-  // Gebruik manueel ingestelde status
-  return {status: cache.loftStatus[loftId]?.status || 'leeg-vuil'};
+  // Manueel ingestelde status door eigenaar
+  return {status: cache.loftStatus[loftId]?.status || 'leeg-schoon'};
 }
 
 function renderStatus() {
@@ -1230,9 +1233,14 @@ function renderStatus() {
   }).join('');
 }
 
+let _cycleBusy = {};
 window._cycleLoftStatus = async function(loftId) {
-  const cur = cache.loftStatus[loftId]?.status || 'leeg-vuil';
-  const next = cur==='leeg-schoon'?'leeg-vuil':'leeg-schoon';
+  if (_cycleBusy[loftId]) return; // debounce: voorkom dubbele klikken
+  _cycleBusy[loftId] = true;
+  setTimeout(() => { _cycleBusy[loftId] = false; }, 1500);
+  // Toggle op basis van manuele status (niet de berekende status)
+  const cur = cache.loftStatus[loftId]?.status || 'leeg-schoon';
+  const next = cur==='leeg-schoon' ? 'leeg-vuil' : 'leeg-schoon';
   setSyncStatus('syncing');
   try {
     await setDoc(doc(db,'loftStatus',loftId), {status:next});
@@ -1240,6 +1248,7 @@ window._cycleLoftStatus = async function(loftId) {
     await logAction(`Status loft ${loftId} → ${next}`);
   } catch(e) {
     toast('Fout bij opslaan', 'err'); setSyncStatus('error');
+    _cycleBusy[loftId] = false;
   }
 };
 
