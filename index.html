@@ -1364,30 +1364,28 @@ function renderBezetting() {
   // Rooster CSS — conform originele app
   const cellStyle = `
     <style>
-    .rc-cell  { position:relative; height:34px; min-width:34px; border:1px solid var(--bdr); }
-    .rc-inner { position:absolute; inset:0; display:flex; align-items:center; overflow:hidden; padding:0 4px; }
+    .rc-cell  { position:relative; height:32px; min-width:36px; padding:0; overflow:hidden; }
+    .rc-inner { position:absolute; inset:0; display:flex; align-items:center; padding:0 5px; overflow:hidden; }
     .rc-name  { font-size:9px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden;
-                text-overflow:ellipsis; max-width:100%; text-shadow:0 1px 3px rgba(0,0,0,.6); letter-spacing:.2px; }
-    /* Groen = gewoon verblijf */
-    .rc-groen    { background:#1e5c35; }
-    /* Blauw = check-in dag (naam zichtbaar) */
-    .rc-blauw    { background:linear-gradient(to right, #1a3a7a 0%, #1e5c35 18px); }
-    /* Rood = check-out dag (naam zichtbaar) */
-    .rc-rood     { background:#6b1a1a; }
-    /* Wisseldag = rood links + blauw rechts, diagonaal */
-    .rc-wissel   { background:linear-gradient(105deg, #6b1a1a 48%, #1a3a7a 52%); }
-    /* Tussentijds poets = gedempter groen */
-    .rc-tuss     { background:#14402a; }
-    .rc-tuss-ico { font-size:9px; opacity:.8; }
-    /* Lege poets dag */
-    .rc-poets-leeg { background:rgba(112,80,160,.25); }
+                text-overflow:ellipsis; text-shadow:0 1px 2px rgba(0,0,0,.7); letter-spacing:.1px; }
+    .rc-groen  { background:#2a6b42; }
+    .rc-blauw  { background:#1e4d9a; }
+    .rc-rood   { background:#8b2020; }
+    .rc-tuss   { background:#1e5535; }
+    .rc-wissel-co { position:absolute; left:0; top:0; bottom:0; width:50%;
+                    background:#8b2020; display:flex; align-items:center; padding:0 3px; overflow:hidden; }
+    .rc-wissel-ci { position:absolute; right:0; top:0; bottom:0; width:50%;
+                    background:#1e4d9a; display:flex; align-items:center; padding:0 3px; overflow:hidden; justify-content:flex-end; }
+    .rc-poets-leeg { background:rgba(112,80,160,.35); }
+    .rc-pijl { font-size:8px; margin-right:2px; flex-shrink:0; opacity:.9; }
+    .rc-pijl-r { font-size:8px; margin-left:2px; flex-shrink:0; opacity:.9; }
     </style>
   `;
 
   let html = cellStyle + `<table class="rooster"><thead><tr>
     <th class="loft-col">Loft</th>
     ${days.map(d => {
-      const dd  = new Date(d+'T12:00:00');
+      const dd   = new Date(d+'T12:00:00');
       const isTo = d===t;
       const isWe = dd.getDay()===0||dd.getDay()===6;
       const dayLbl = ['zo','ma','di','wo','do','vr','za'][dd.getDay()];
@@ -1398,70 +1396,84 @@ function renderBezetting() {
   LOFTS.forEach(l => {
     html += `<tr><td class="loft-col">${l.id}</td>`;
     days.forEach(d => {
-      const isTo   = d===t;
+      const isTo     = d===t;
       const todayCls = isTo ? ' day-today' : '';
 
-      // Boeking actief op dag d (gast slaapt hier: checkIn <= d < checkOut)
+      // Boeking actief: gast slaapt hier (checkIn <= d < checkOut)
       const bkActief = Object.values(cache.boekingen)
         .find(b => b.loftId===l.id && b.checkIn<=d && b.checkOut>d);
-      // Boeking waarvan checkout = dag d (gast vertrekt deze dag)
+      // Boeking checkout op dag d
       const bkCO = Object.values(cache.boekingen)
         .find(b => b.loftId===l.id && b.checkOut===d);
-      // Tussentijdse poets op dag d (open taak)
+      // Tussentijdse poets
       const tuss = Object.values(cache.taken)
         .find(ta => ta.loftId===l.id && ta.datum===d && ta.type==='tussentijds' && ta.status==='open');
       // Eindpoets op lege dag
-      const ep = Object.values(cache.taken)
+      const ep = !bkActief && !bkCO && Object.values(cache.taken)
         .find(ta => ta.loftId===l.id && ta.datum===d && ta.type==='eindpoets' && ta.status==='open');
-
-      const extraInfo = bkActief ? [
-        bkActief.extraKamer?'extra kamer':'',
-        bkActief.logeerbedden?`${bkActief.logeerbedden}x logeerbed`:'',
-        bkActief.babybedden?`${bkActief.babybedden}x babybed`:''
-      ].filter(Boolean).join(', ') : '';
 
       if (bkActief) {
         const isCI = bkActief.checkIn === d;
-        // Wisseldag: vorige gast checkt uit op dag d, nieuwe gast checkt in
+        // Wisseldag: vorige CO + nieuwe CI op zelfde dag
         const bkCOsameDay = Object.values(cache.boekingen)
           .find(b => b.loftId===l.id && b.checkOut===d && b.id!==bkActief.id);
-        const isWisseldag = isCI && bkCOsameDay;
 
-        let cls, naamTonen = '';
-        if (isWisseldag) {
-          cls = 'rc-wissel';
-          naamTonen = bkActief.naam; // naam nieuwe gast rechts
+        if (isCI && bkCOsameDay) {
+          // Wisseldag: linkerhelft rood (CO), rechterhelft blauw (CI)
+          html += `<td class="rc-cell${todayCls}" style="cursor:pointer" onclick="window._openBoeking('${bkActief.id}')"
+            title="CO: ${bkCOsameDay.naam} / CI: ${bkActief.naam}">
+            <div class="rc-wissel-co">
+              <span class="rc-pijl">◀</span>
+              <span class="rc-name">${bkCOsameDay.naam}</span>
+            </div>
+            <div class="rc-wissel-ci">
+              <span class="rc-name">${bkActief.naam}</span>
+              <span class="rc-pijl-r">▶</span>
+            </div>
+          </td>`;
         } else if (isCI) {
-          cls = 'rc-blauw';
-          naamTonen = bkActief.naam;
+          // Check-in dag: volledig blauw
+          html += `<td class="rc-cell${todayCls}" onclick="window._openBoeking('${bkActief.id}')"
+            style="cursor:pointer" title="${bkActief.naam}: CI ${bkActief.checkIn}">
+            <div class="rc-inner rc-blauw">
+              <span class="rc-pijl">▶</span>
+              <span class="rc-name">${bkActief.naam}</span>
+            </div>
+          </td>`;
         } else if (tuss) {
-          cls = 'rc-tuss'; // tussentijdse poets — gedempter groen, geen bezem
-          naamTonen = '';
+          // Tussentijdse poets dag: gedempter groen + naam
+          html += `<td class="rc-cell${todayCls}" onclick="window._openBoeking('${bkActief.id}')"
+            style="cursor:pointer" title="${bkActief.naam} — tussentijdse poets">
+            <div class="rc-inner rc-tuss">
+              <span class="rc-name">${bkActief.naam}</span>
+            </div>
+          </td>`;
         } else {
-          cls = 'rc-groen';
-          naamTonen = '';
+          // Gewone verblijfsdag: groen + naam
+          html += `<td class="rc-cell${todayCls}" onclick="window._openBoeking('${bkActief.id}')"
+            style="cursor:pointer" title="${bkActief.naam}">
+            <div class="rc-inner rc-groen">
+              <span class="rc-name">${bkActief.naam}</span>
+            </div>
+          </td>`;
         }
 
-        html += `<td class="rc-cell${todayCls}" onclick="window._openBoeking('${bkActief.id}')"
-          style="cursor:pointer" title="${bkActief.naam}: ${bkActief.checkIn}–${bkActief.checkOut}${extraInfo?' · '+extraInfo:''}">
-          <div class="rc-inner ${cls}">
-            ${naamTonen ? `<span class="rc-name">${naamTonen}</span>` : ''}
-          </div>
-        </td>`;
-
       } else if (bkCO) {
-        // Check-out dag: gast vertrekt, rood met naam
+        // Check-out dag: volledig rood + naam + ◀
         html += `<td class="rc-cell${todayCls}" onclick="window._openBoeking('${bkCO.id}')"
-          style="cursor:pointer" title="CO: ${bkCO.naam}">
+          style="cursor:pointer" title="${bkCO.naam}: CO ${bkCO.checkOut}">
           <div class="rc-inner rc-rood">
+            <span class="rc-pijl">◀</span>
             <span class="rc-name">${bkCO.naam}</span>
           </div>
         </td>`;
 
       } else if (ep) {
-        // Lege dag met eindpoets gepland
-        html += `<td class="rc-cell rc-poets-leeg${todayCls}" title="Eindpoets gepland">
-          <div class="rc-inner" style="justify-content:center"><span style="font-size:11px">🧹</span></div>
+        // Lege dag met eindpoets
+        html += `<td class="rc-cell rc-poets-leeg${todayCls}" title="Eindpoets gepland ${ep.tijdVan||''}${ep.tijdTot?' – '+ep.tijdTot:''}">
+          <div class="rc-inner" style="justify-content:center">
+            <span style="font-size:11px">🧹</span>
+          </div>
         </td>`;
 
       } else {
@@ -1473,12 +1485,12 @@ function renderBezetting() {
 
   // Legenda
   html += `</tbody></table>
-    <div style="display:flex;gap:14px;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--bdr);font-size:11px;color:var(--muted)">
-      <span><span style="display:inline-block;width:12px;height:12px;background:#1e5c35;border-radius:2px;margin-right:4px;vertical-align:middle"></span>Verblijf</span>
-      <span><span style="display:inline-block;width:12px;height:12px;background:#1a3a7a;border-radius:2px;margin-right:4px;vertical-align:middle"></span>Check-in</span>
-      <span><span style="display:inline-block;width:12px;height:12px;background:#6b1a1a;border-radius:2px;margin-right:4px;vertical-align:middle"></span>Check-out</span>
-      <span><span style="display:inline-block;width:12px;height:12px;background:#14402a;border-radius:2px;margin-right:4px;vertical-align:middle"></span>Tussentijds poets</span>
-      <span><span style="display:inline-block;width:12px;height:12px;background:rgba(112,80,160,.4);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Eindpoets</span>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--bdr);font-size:11px;color:var(--muted)">
+      <span><span style="display:inline-block;width:12px;height:12px;background:#2a6b42;border-radius:2px;margin-right:5px;vertical-align:middle"></span>Verblijf</span>
+      <span><span style="display:inline-block;width:12px;height:12px;background:#1e4d9a;border-radius:2px;margin-right:5px;vertical-align:middle"></span>Check-in</span>
+      <span><span style="display:inline-block;width:12px;height:12px;background:#8b2020;border-radius:2px;margin-right:5px;vertical-align:middle"></span>Check-out</span>
+      <span><span style="display:inline-block;width:12px;height:12px;background:#1e5535;border-radius:2px;margin-right:5px;vertical-align:middle"></span>Tussentijds poets</span>
+      <span><span style="display:inline-block;width:12px;height:12px;background:rgba(112,80,160,.4);border-radius:2px;margin-right:5px;vertical-align:middle"></span>Eindpoets</span>
     </div>`;
 
   document.getElementById('roosterWrap').innerHTML = html;
