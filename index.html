@@ -624,17 +624,15 @@ input, select, textarea { font-family:var(--sans); font-size:16px; /* prevent iO
 
       <!-- ── BEZETTING PAGE ── -->
       <div class="page" id="p-bezetting">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <button class="week-btn" onclick="roosterNav(-1)" style="background:var(--sur2);border:1px solid var(--bdr);border-radius:var(--r);flex-shrink:0">‹</button>
+          <button class="week-today-btn" onclick="roosterNav(0)" style="flex-shrink:0">Nu</button>
+          <button class="week-btn" onclick="roosterNav(1)" style="background:var(--sur2);border:1px solid var(--bdr);border-radius:var(--r);flex-shrink:0">›</button>
+          <div class="rooster-lbl" id="roosterLbl" style="flex:1;font-family:var(--disp);font-size:13px;font-weight:700;color:var(--cream);text-align:center"></div>
+          <button class="btn btn-ghost btn-sm" onclick="window._openNieuweBoeking()" style="flex-shrink:0">＋ Boeking</button>
+          <button class="btn btn-gold btn-sm" onclick="openBatchModal()" title="Batch invoer" style="flex-shrink:0">⊞ Batch</button>
+        </div>
         <div class="card">
-          <div class="card-h">
-            <div class="rooster-nav" style="margin:0;flex:1">
-              <div class="rooster-lbl" id="roosterLbl">Bezetting</div>
-              <button class="week-btn" onclick="roosterNav(-1)" style="background:var(--sur2);border:1px solid var(--bdr);border-radius:var(--r)">‹</button>
-              <button class="week-today-btn" onclick="roosterNav(0)">Nu</button>
-              <button class="week-btn" onclick="roosterNav(1)" style="background:var(--sur2);border:1px solid var(--bdr);border-radius:var(--r)">›</button>
-              <button class="btn btn-ghost btn-sm" onclick="window._openNieuweBoeking()">＋ Boeking</button>
-              <button class="btn btn-gold btn-sm" onclick="openBatchModal()" title="Batch invoer">⊞ Batch</button>
-            </div>
-          </div>
           <div class="card-b" style="padding:0">
             <div class="rooster-wrap" id="roosterWrap"></div>
           </div>
@@ -1173,8 +1171,34 @@ window.closeModal = closeModal;
 // ════════════════════════════════════════════════
 function getLoftStatus(loftId) {
   const t = today();
-  const boek = Object.values(cache.boekingen).find(b=>b.loftId===loftId && b.checkIn<=t && b.checkOut>t);
-  if (boek) return {status:'bezet', boeking:boek};
+  const now = new Date();
+  const nowMin = now.getHours()*60 + now.getMinutes();
+
+  // Actieve boeking: gast slaapt hier (checkIn <= vandaag < checkOut)
+  const boekActief = Object.values(cache.boekingen)
+    .find(b => b.loftId===loftId && b.checkIn<=t && b.checkOut>t);
+  if (boekActief) return {status:'bezet', boeking:boekActief};
+
+  // Boeking die vandaag uitcheckt: toon bezet tot checkout-tijd, daarna vuil
+  const boekCO = Object.values(cache.boekingen)
+    .find(b => b.loftId===loftId && b.checkOut===t);
+  if (boekCO) {
+    const coTijd = boekCO.checkOutTijd || '11:00';
+    const [h,m] = coTijd.split(':').map(Number);
+    const coMin = h*60+m;
+    if (nowMin < coMin) return {status:'bezet', boeking:boekCO}; // nog niet uitgecheckt
+    // Na checkout → vuil als er nog een open eindpoets is
+    const openEp = Object.values(cache.taken)
+      .find(ta => ta.bkId===boekCO.id && ta.type==='eindpoets' && ta.status==='open');
+    if (openEp) return {status:'leeg-vuil'};
+  }
+
+  // Geen actieve boeking: kijk of er een open eindpoets is op dit loft
+  const openEp = Object.values(cache.taken)
+    .find(ta => ta.loftId===loftId && ta.type==='eindpoets' && ta.status==='open');
+  if (openEp) return {status:'leeg-vuil'};
+
+  // Gebruik manueel ingestelde status
   return {status: cache.loftStatus[loftId]?.status || 'leeg-vuil'};
 }
 
