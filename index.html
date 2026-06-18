@@ -502,6 +502,13 @@ input, select, textarea { font-family:var(--sans); font-size:16px; /* prevent iO
 @media(min-width:1200px) {
   .loft-grid { grid-template-columns:repeat(4,1fr); }
 }
+/* Responsive knoplabels bezetting nav */
+.btn-lbl-short { display:none; }
+.btn-lbl-long  { display:inline; }
+@media(max-width:600px) {
+  .btn-lbl-short { display:inline; }
+  .btn-lbl-long  { display:none; }
+}
 </style>
 </head>
 <body>
@@ -624,13 +631,13 @@ input, select, textarea { font-family:var(--sans); font-size:16px; /* prevent iO
 
       <!-- ── BEZETTING PAGE ── -->
       <div class="page" id="p-bezetting">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
           <button class="week-btn" onclick="roosterNav(-1)" style="background:var(--sur2);border:1px solid var(--bdr);border-radius:var(--r);flex-shrink:0">‹</button>
           <button class="week-today-btn" onclick="roosterNav(0)" style="flex-shrink:0">Nu</button>
           <button class="week-btn" onclick="roosterNav(1)" style="background:var(--sur2);border:1px solid var(--bdr);border-radius:var(--r);flex-shrink:0">›</button>
-          <div class="rooster-lbl" id="roosterLbl" style="flex:1;font-family:var(--disp);font-size:13px;font-weight:700;color:var(--cream);text-align:center"></div>
-          <button class="btn btn-ghost btn-sm" onclick="window._openNieuweBoeking()" style="flex-shrink:0">＋ Boeking</button>
-          <button class="btn btn-gold btn-sm" onclick="openBatchModal()" title="Batch invoer" style="flex-shrink:0">⊞ Batch</button>
+          <div class="rooster-lbl" id="roosterLbl" style="flex:1;font-family:var(--disp);font-size:12px;font-weight:700;color:var(--cream);text-align:center;min-width:0"></div>
+          <button class="btn btn-ghost btn-sm" onclick="window._openNieuweBoeking()" style="flex-shrink:0;padding:7px 10px"><span class="btn-lbl-long">＋ Boeking</span><span class="btn-lbl-short">＋</span></button>
+          <button class="btn btn-gold btn-sm" onclick="openBatchModal()" style="flex-shrink:0;padding:7px 10px"><span class="btn-lbl-long">⊞ Batch</span><span class="btn-lbl-short">⊞</span></button>
         </div>
         <div class="card">
           <div class="card-b" style="padding:0">
