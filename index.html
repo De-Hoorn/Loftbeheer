@@ -847,15 +847,19 @@ try {
 // CONSTANTEN
 // ════════════════════════════════════════════════
 const LOFTS = [
-  {id:'9.1',  verd:9,  type:'regular', extraKamer:false, logeerbed:true, babybed:true},
-  {id:'9.2',  verd:9,  type:'regular', extraKamer:false, logeerbed:true, babybed:true},
-  {id:'9.3',  verd:9,  type:'extra',   extraKamer:true,  logeerbed:true, babybed:true},
-  {id:'9.4',  verd:9,  type:'regular', extraKamer:false, logeerbed:true, babybed:true},
-  {id:'9.5',  verd:9,  type:'regular', extraKamer:false, logeerbed:true, babybed:true},
-  {id:'10.1', verd:10, type:'premium', extraKamer:false, logeerbed:true, babybed:true},
-  {id:'10.2', verd:10, type:'extra',   extraKamer:true,  logeerbed:true, babybed:true},
-  {id:'10.3', verd:10, type:'regular', extraKamer:false, logeerbed:true, babybed:true},
-  {id:'10.4', verd:10, type:'premium', extraKamer:false, logeerbed:true, babybed:true},
+  // Regular Loft
+  {id:'9.1',  verd:9,  type:'regular', groep:'Regular Loft',            extraKamer:false, logeerbed:true, babybed:true},
+  {id:'9.2',  verd:9,  type:'regular', groep:'Regular Loft',            extraKamer:false, logeerbed:true, babybed:true},
+  {id:'10.3', verd:10, type:'regular', groep:'Regular Loft',            extraKamer:false, logeerbed:true, babybed:true},
+  // Regular lofts - short stays toegelaten
+  {id:'9.4',  verd:9,  type:'regular', groep:'Regular lofts - short stays toegelaten', extraKamer:false, logeerbed:true, babybed:true},
+  {id:'9.5',  verd:9,  type:'regular', groep:'Regular lofts - short stays toegelaten', extraKamer:false, logeerbed:true, babybed:true},
+  // Premium Loft
+  {id:'10.1', verd:10, type:'premium', groep:'Premium Loft',            extraKamer:false, logeerbed:true, babybed:true},
+  {id:'10.4', verd:10, type:'premium', groep:'Premium Loft',            extraKamer:false, logeerbed:true, babybed:true},
+  // Loft met extra kamer
+  {id:'9.3',  verd:9,  type:'extra',   groep:'Loft met extra kamer',    extraKamer:true,  logeerbed:true, babybed:true},
+  {id:'10.2', verd:10, type:'extra',   groep:'Loft met extra kamer',    extraKamer:true,  logeerbed:true, babybed:true},
 ];
 // Totale stock extra bedden (gedeeld over alle loften)
 const STOCK_LOGEERBEDDEN = 2;
@@ -1480,7 +1484,18 @@ function renderBezetting() {
     }).join('')}
   </tr></thead><tbody>`;
 
-  LOFTS.forEach(l => {
+  LOFTS.forEach((l, idx) => {
+    // Groepslabel toevoegen als eerste loft van een nieuwe groep
+    const vorigeGroep = idx > 0 ? LOFTS[idx-1].groep : null;
+    if (l.groep !== vorigeGroep) {
+      html += `<tr>
+        <td class="loft-col" style="background:var(--sur3);color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;padding:6px 10px;border-top:2px solid var(--bdr2)">${l.groep}</td>
+        ${days.map(d => {
+          const isWe = new Date(d+'T12:00:00').getDay()===0||new Date(d+'T12:00:00').getDay()===6;
+          return `<td style="background:var(--sur3);border:1px solid var(--bdr);${isWe?'opacity:.4':''}"></td>`;
+        }).join('')}
+      </tr>`;
+    }
     html += `<tr><td class="loft-col">${l.id}</td>`;
     days.forEach(d => {
       const isTo     = d===t;
