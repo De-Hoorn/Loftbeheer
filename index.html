@@ -388,11 +388,12 @@ input, select, textarea { font-family:var(--sans); font-size:16px; /* prevent iO
   padding:6px 6px; font-size:10px; font-weight:600; color:var(--muted);
   text-align:center; min-width:34px;
 }
-.rooster th.loft-col { min-width:54px; text-align:left; position:sticky; left:0; z-index:2; background:var(--sur2); padding-left:10px; }
+.rooster th.loft-col { min-width:44px; width:44px; text-align:left; position:sticky; left:0; z-index:2; background:var(--sur2); padding-left:6px; }
 .rooster td { border:1px solid var(--bdr); height:34px; text-align:center; vertical-align:middle; font-size:10px; }
 .rooster td.loft-col {
   background:var(--sur); font-family:var(--disp); font-size:11px; font-weight:700;
-  padding:0 10px; color:var(--cream); position:sticky; left:0; z-index:1;
+  padding:0 6px; color:var(--cream); position:sticky; left:0; z-index:1;
+  min-width:44px; width:44px; max-width:44px;
 }
 .rooster th.day-today { background:var(--gold-l) !important; color:var(--gold) !important; }
 .rooster td.day-today { background:rgba(200,146,42,.04) !important; }
@@ -1496,7 +1497,7 @@ function renderBezetting() {
     const vorigeGroep = idx > 0 ? LOFTS[idx-1].groep : null;
     if (l.groep !== vorigeGroep) {
       html += `<tr>
-        <td class="loft-col" style="background:var(--sur3);color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;padding:6px 10px;border-top:2px solid var(--bdr2)">${l.groep}</td>
+        <td class="loft-col" style="background:var(--sur3);color:var(--muted);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;padding:5px 6px;border-top:2px solid var(--bdr2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l.groep}</td>
         ${days.map(d => {
           const isWe = new Date(d+'T12:00:00').getDay()===0||new Date(d+'T12:00:00').getDay()===6;
           return `<td style="background:var(--sur3);border:1px solid var(--bdr);${isWe?'opacity:.4':''}"></td>`;
