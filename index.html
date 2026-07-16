@@ -1266,9 +1266,18 @@ function getLoftStatus(loftId) {
   const now = new Date();
   const nowMin = now.getHours()*60 + now.getMinutes();
 
-  // Actieve boeking: gast slaapt hier (checkIn <= vandaag < checkOut)
+  // Boeking die vandaag incheckt: pas bezet vanaf check-in tijd
+  const boekCI = Object.values(cache.boekingen)
+    .find(b => b.loftId===loftId && b.checkIn===t && b.checkOut>t);
+  if (boekCI) {
+    const [h,m] = (boekCI.checkInTijd||'15:00').split(':').map(Number);
+    if (nowMin >= h*60+m) return {status:'bezet', boeking:boekCI};
+    // Vóór check-in tijd: leeg-schoon (gast nog niet aanwezig)
+  }
+
+  // Actieve boeking: gast slaapt hier (checkIn < vandaag < checkOut)
   const boekActief = Object.values(cache.boekingen)
-    .find(b => b.loftId===loftId && b.checkIn<=t && b.checkOut>t);
+    .find(b => b.loftId===loftId && b.checkIn<t && b.checkOut>t);
   if (boekActief) return {status:'bezet', boeking:boekActief};
 
   // Boeking die vandaag uitcheckt: bezet tot checkout-tijd
@@ -1284,12 +1293,11 @@ function getLoftStatus(loftId) {
   }
 
   // Geen actieve boeking: check ALLEEN achterstallige open eindpoetsen
-  // (datum <= vandaag EN boeking al voorbij) — toekomstige poets tellen NIET mee
   const achterstallig = Object.values(cache.taken).find(ta => {
     if (ta.loftId!==loftId || ta.type!=='eindpoets' || ta.status!=='open') return false;
-    if (ta.datum > t) return false; // toekomstig → geen impact op huidige status
+    if (ta.datum > t) return false;
     const bk = cache.boekingen[ta.bkId];
-    return !bk || bk.checkOut <= t; // boeking is voorbij
+    return !bk || bk.checkOut <= t;
   });
   if (achterstallig) return {status:'leeg-vuil'};
 
